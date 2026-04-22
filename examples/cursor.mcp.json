@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "allbridge": {
+      "command": "node",
+      "args": ["dist/index.js"],
+      "cwd": "<path-to-allbridge-mcp>",
+      "env": {
+        "ALLBRIDGE_API_BASE_URL": "http://127.0.0.1:3000"
+      }
+    }
+  }
+}
