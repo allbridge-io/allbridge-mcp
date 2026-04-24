@@ -11,6 +11,7 @@ WORKDIR /app
 ENV NODE_ENV=production
 
 COPY package.json ./
+COPY .npmrc ./
 COPY pnpm-workspace.yaml ./
 COPY pnpm-lock.yaml ./
 COPY src ./src

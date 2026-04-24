@@ -11,6 +11,7 @@ function createOauthConfig(overrides: Partial<AppConfig> = {}): AppConfig {
   return {
     ALLBRIDGE_API_BASE_URL: 'http://127.0.0.1:3000',
     ALLBRIDGE_API_TIMEOUT_MS: 20_000,
+    ALLBRIDGE_EXPLORER_API_BASE_URL: 'https://explorer.api.allbridgecoreapi.net',
     MCP_AUTH_MODE: 'oauth',
     MCP_TRANSPORT: 'streamable-http',
     MCP_HOST: '0.0.0.0',
@@ -118,6 +119,20 @@ describe('McpAuthService', () => {
     expect(auth.verifyAuthorizationHeader(createRequest(`Bearer ${token.access_token}`))).toEqual({
       authorized: true,
     });
+  });
+
+  it('defaults redirect URIs for dynamic client registration when omitted', () => {
+    const auth = createMcpAuthService(createOauthConfig());
+
+    const client = auth.registerClient({
+      client_name: 'Test Client',
+      token_endpoint_auth_method: 'none',
+    });
+
+    expect(client.redirect_uris).toEqual([
+      'http://127.0.0.1:3000/callback',
+      'http://localhost:3000/callback',
+    ]);
   });
 
   it('supports bearer token authorization', () => {

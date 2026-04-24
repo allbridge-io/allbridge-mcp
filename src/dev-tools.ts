@@ -161,8 +161,10 @@ const DEV_GROUPS: Record<DevProduct, DevGroup> = {
       'quote bridge transfers',
       'validate sender and fee balances before execution',
       'build execution jobs and raw transaction payloads',
+      'check and build Stellar trustlines and Algorand opt-ins when the destination chain requires them',
       'broadcast already signed transactions',
       'track transfer status',
+      'search and open past transfers in the public explorer',
     ],
     boundaries: [
       'does not sign transactions',
@@ -178,14 +180,21 @@ const DEV_GROUPS: Record<DevProduct, DevGroup> = {
       'check_bridge_balances',
       'create_bridge_execution_job',
       'build_bridge_transactions',
+      'check_stellar_trustline',
+      'build_stellar_trustline_transaction',
+      'check_algorand_optin',
+      'build_algorand_optin_transaction',
+      'search_allbridge_transfers',
+      'get_allbridge_transfer',
     ],
     resources: [
       localDocResource('rest-api-integration', 'bridge-workflow', 'Bridge workflow guide and execution order.', 'docs/gitbook/ai/allbridge-mcp/bridge-workflow.md'),
       localDocResource('rest-api-integration', 'tool-reference', 'Tool reference for bridge planning and execution.', 'docs/gitbook/ai/allbridge-mcp/tool-reference.md'),
       localDocResource('rest-api-integration', 'usage', 'Operational usage guide for bridge flows.', 'docs/usage.md'),
       codeResource('rest-api-integration', 'execution-job-contract', 'Validation contract for bridge execution jobs.', 'src/execution-job-contract.ts'),
-      codeResource('rest-api-integration', 'allbridge-api-client', 'API client used for catalog, quotes, balance checks, and transaction building.', 'src/allbridge-api-client.ts'),
+      codeResource('rest-api-integration', 'allbridge-api-client', 'API client used for catalog, quotes, balance checks, transaction building, and destination setup checks.', 'src/allbridge-api-client.ts'),
       codeResource('rest-api-integration', 'chain-catalog', 'Chain and token resolution logic.', 'src/chain-catalog.ts'),
+      codeResource('rest-api-integration', 'explorer-api-client', 'Explorer API client used for transfer lookup and orientation.', 'src/explorer-api-client.ts'),
     ],
   },
   dev: {
@@ -264,9 +273,9 @@ const DEV_GROUPS: Record<DevProduct, DevGroup> = {
       localDocResource('rest-api-integration', 'rest-api-readme', 'Top-level REST API integration guide in this repository.', '../README.md'),
       localDocResource('rest-api-integration', 'mcp-readme', 'MCP server overview and capability boundary.', 'README.md'),
       localDocResource('rest-api-integration', 'developer-assistant', 'Developer-assistant workflow and tool groups.', 'docs/gitbook/ai/allbridge-mcp/developer-assistant.md'),
-      localDocResource('rest-api-integration', 'mcp-usage', 'Operational usage guide for bridge and broadcast flows.', 'docs/usage.md'),
-      localDocResource('rest-api-integration', 'mcp-tool-reference', 'Bridge and broadcast tool reference.', 'docs/gitbook/ai/allbridge-mcp/tool-reference.md'),
-      localDocResource('rest-api-integration', 'mcp-bridge-workflow', 'Bridge workflow and execution handoff notes.', 'docs/gitbook/ai/allbridge-mcp/bridge-workflow.md'),
+      localDocResource('rest-api-integration', 'mcp-usage', 'Operational usage guide for bridge, explorer lookup, and broadcast flows.', 'docs/usage.md'),
+      localDocResource('rest-api-integration', 'mcp-tool-reference', 'Bridge, explorer, and broadcast tool reference.', 'docs/gitbook/ai/allbridge-mcp/tool-reference.md'),
+      localDocResource('rest-api-integration', 'mcp-bridge-workflow', 'Bridge workflow, explorer lookup, and execution handoff notes.', 'docs/gitbook/ai/allbridge-mcp/bridge-workflow.md'),
       localDocResource('rest-api-integration', 'mcp-public-boundary', 'Public boundary and trust model notes.', 'docs/gitbook/ai/allbridge-mcp/public-boundary.md'),
       localDocResource('rest-api-integration', 'mcp-http-and-auth', 'HTTP transport and auth model notes.', 'docs/gitbook/ai/allbridge-mcp/http-and-auth.md'),
       localDocResource('rest-api-integration', 'mcp-local-signing', 'Local signing companion workflow notes.', 'docs/gitbook/ai/allbridge-mcp/local-signing.md'),
@@ -330,12 +339,17 @@ function stripHtml(html: string): string {
     .trim();
 }
 
-async function readResourceContent(resource: DevResource): Promise<string> {
+async function readResourceContent(resource: DevResource, preferHint = false): Promise<string> {
   const { source, location, contentHint } = resource;
   const cacheKey = `${source}:${location}`;
   const cached = contentCache.get(cacheKey);
   if (cached) {
     return cached;
+  }
+
+  if (preferHint && contentHint) {
+    contentCache.set(cacheKey, contentHint);
+    return contentHint;
   }
 
   if (source === 'local-file') {
@@ -444,7 +458,7 @@ async function searchDocumentation(query: string, limit: number, collection?: De
 
   for (const resource of resources) {
     try {
-      const content = await readResourceContent(resource);
+      const content = await readResourceContent(resource, true);
       const lines = content.split(/\r?\n/);
       const snippets: Array<{
         line: number;

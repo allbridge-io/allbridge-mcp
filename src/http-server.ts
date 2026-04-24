@@ -1,7 +1,6 @@
 import type { Server as HttpServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
 
-import { createMcpExpressApp } from '@modelcontextprotocol/sdk/server/express.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import type { Request, Response } from 'express';
@@ -65,7 +64,7 @@ export function createStreamableHttpApp(
   createSession: CreateMcpSession,
   options: StreamableHttpAppOptions = {},
 ) {
-  const app = createMcpExpressApp({ host });
+  const app = express();
   const authService = createMcpAuthService(config);
   const sessions = new Map<string, SessionRecord>();
   const maxSessions = options.maxSessions ?? DEFAULT_MAX_SESSIONS;
@@ -73,6 +72,7 @@ export function createStreamableHttpApp(
   let pendingSessions = 0;
 
   app.set('trust proxy', true);
+  app.use(express.json());
   app.use(express.urlencoded({ extended: false }));
 
   function withPublicBaseUrl(req: Request): string {

@@ -1,5 +1,4 @@
 module.exports = {
-  preset: 'ts-jest/presets/default-esm',
   rootDir: '.',
   testMatch: ['<rootDir>/test/**/*.spec.ts'],
   testEnvironment: 'node',

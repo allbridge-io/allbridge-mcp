@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 
 import { AllbridgeApiClient } from './allbridge-api-client.js';
+import { AllbridgeExplorerApiClient } from './explorer-api-client.js';
 import { config } from './config.js';
 import { startStreamableHttpServer } from './http-server.js';
 import { registerAllbridgeTools } from './tools.js';
@@ -16,8 +17,12 @@ function createServer(): McpServer {
     config.ALLBRIDGE_API_BASE_URL,
     config.ALLBRIDGE_API_TIMEOUT_MS,
   );
+  const explorerClient = new AllbridgeExplorerApiClient(
+    config.ALLBRIDGE_EXPLORER_API_BASE_URL,
+    config.ALLBRIDGE_API_TIMEOUT_MS,
+  );
 
-  registerAllbridgeTools(server, apiClient);
+  registerAllbridgeTools(server, apiClient, explorerClient);
 
   return server;
 }

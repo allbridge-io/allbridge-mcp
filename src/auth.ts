@@ -8,7 +8,7 @@ const authModeSchema = z.enum(['none', 'bearer', 'oauth']);
 
 const registerClientSchema = z.object({
   client_name: z.string().trim().optional(),
-  redirect_uris: z.array(z.string().trim().url()).min(1),
+  redirect_uris: z.array(z.string().trim().url()).optional(),
   grant_types: z.array(z.string().trim().min(1)).optional(),
   response_types: z.array(z.string().trim().min(1)).optional(),
   token_endpoint_auth_method: z.enum(['none', 'client_secret_post', 'client_secret_basic']).optional(),
@@ -160,6 +160,11 @@ function isAllowedRedirectUri(redirectUri: string): boolean {
 function buildCodeChallenge(verifier: string): string {
   return createHash('sha256').update(verifier).digest('base64url');
 }
+
+const defaultRedirectUris = [
+  'http://127.0.0.1:3000/callback',
+  'http://localhost:3000/callback',
+];
 
 export interface ProtectedResourceMetadata {
   resource: string;
@@ -358,7 +363,7 @@ export class McpAuthService {
     const raw = input as Record<string, unknown>;
     const parsed = registerClientSchema.parse({
       client_name: normalizeString(raw.client_name),
-      redirect_uris: readStringArray(raw.redirect_uris) ?? [],
+      redirect_uris: readStringArray(raw.redirect_uris),
       grant_types: readStringArray(raw.grant_types),
       response_types: readStringArray(raw.response_types),
       token_endpoint_auth_method: normalizeString(raw.token_endpoint_auth_method) as
@@ -374,7 +379,7 @@ export class McpAuthService {
     const registered: RegisteredClient = {
       clientId,
       clientName: parsed.client_name ?? 'MCP Client',
-      redirectUris: parsed.redirect_uris,
+      redirectUris: parsed.redirect_uris ?? defaultRedirectUris,
       grantTypes: parsed.grant_types ?? ['authorization_code', 'refresh_token'],
       responseTypes: parsed.response_types ?? ['code'],
       tokenEndpointAuthMethod: clientSecretMethod,

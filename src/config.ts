@@ -6,6 +6,7 @@ dotenv.config();
 const configSchema = z.object({
   ALLBRIDGE_API_BASE_URL: z.string().url().default('http://127.0.0.1:3000'),
   ALLBRIDGE_API_TIMEOUT_MS: z.coerce.number().int().positive().default(20_000),
+  ALLBRIDGE_EXPLORER_API_BASE_URL: z.string().url().default('https://explorer.api.allbridgecoreapi.net'),
   MCP_AUTH_MODE: z.enum(['none', 'bearer', 'oauth']).default('none'),
   MCP_TRANSPORT: z.enum(['stdio', 'streamable-http']).default('stdio'),
   MCP_HOST: z.string().trim().min(1).default('0.0.0.0'),

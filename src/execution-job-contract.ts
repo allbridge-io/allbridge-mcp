@@ -35,6 +35,16 @@ export type BridgeExecutionStepContract = {
   nextOnSuccess: string;
 };
 
+export type DestinationSetupContract = {
+  required: boolean;
+  chainFamily: 'ALG' | 'SRB' | null;
+  chainSymbol: string | null;
+  accountAddress: string;
+  checkTool: string;
+  buildTool: string;
+  reason: string | null;
+};
+
 export type BridgeExecutionJobContract = {
   jobId: string;
   kind: 'bridge_transfer';
@@ -60,7 +70,9 @@ export type BridgeExecutionJobContract = {
     destinationTokenAddress: string;
     transferStatusTool: string;
     transferStatusArguments: RecordLike;
+    historyUrlTemplate?: string;
   };
+  destinationSetup?: DestinationSetupContract | null;
   nextAction: string;
 };
 

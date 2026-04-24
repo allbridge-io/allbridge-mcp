@@ -2,6 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { beforeEach, describe, expect, jest, test } from '@jest/globals';
 
 import { AllbridgeApiError, type AllbridgeApiClient } from '../src/allbridge-api-client.js';
+import { type AllbridgeExplorerApiClient } from '../src/explorer-api-client.js';
 import { registerAllbridgeTools } from '../src/tools.js';
 import type { TokenWithChainDetails } from '../src/types.js';
 
@@ -53,12 +54,26 @@ function createClientMock(): jest.Mocked<AllbridgeApiClient> {
     buildBridgeApproveTx: jest.fn(),
     buildBridgeTx: jest.fn(),
     getTransferStatus: jest.fn(),
+    checkStellarBalanceLine: jest.fn(),
+    checkAlgorandOptIn: jest.fn(),
+    buildStellarTrustlineTransaction: jest.fn(),
+    buildAlgorandOptInTransaction: jest.fn(),
   } as unknown as jest.Mocked<AllbridgeApiClient>;
+}
+
+function createExplorerClientMock(): jest.Mocked<AllbridgeExplorerApiClient> {
+  return {
+    search: jest.fn(),
+    listTransfers: jest.fn(),
+    searchTransfers: jest.fn(),
+    getTransfer: jest.fn(),
+  } as unknown as jest.Mocked<AllbridgeExplorerApiClient>;
 }
 
 describe('registerAllbridgeTools', () => {
   let server: FakeMcpServer;
   let client: jest.Mocked<AllbridgeApiClient>;
+  let explorerClient: jest.Mocked<AllbridgeExplorerApiClient>;
   let dependencies: {
     broadcastSignedTransactionByFamily: jest.Mock;
   };
@@ -66,11 +81,12 @@ describe('registerAllbridgeTools', () => {
   beforeEach(() => {
     server = new FakeMcpServer();
     client = createClientMock();
+    explorerClient = createExplorerClientMock();
     dependencies = {
       broadcastSignedTransactionByFamily: jest.fn(),
     };
 
-    registerAllbridgeTools(server as unknown as McpServer, client, dependencies);
+    registerAllbridgeTools(server as unknown as McpServer, client, explorerClient, dependencies);
 
     client.getBridgeQuote.mockResolvedValue({
       amountInt: '1000000',
@@ -334,6 +350,58 @@ describe('registerAllbridgeTools', () => {
       amount: '1000000000000000000',
     });
     expect(result.structuredContent).toEqual({
+      balanceValidation: {
+        sourceToken: {
+          symbol: 'YARO',
+          name: 'USD Coin',
+          tokenAddress: '0xyaro-eth',
+          decimals: 18,
+          chainSymbol: 'ETH',
+          chainName: 'Ethereum',
+          chainType: 'EVM',
+        },
+        destinationToken: {
+          symbol: 'YARO',
+          name: 'YARO',
+          tokenAddress: 'yaro-sol',
+          decimals: 9,
+          chainSymbol: 'SOL',
+          chainName: 'Solana',
+          chainType: 'SOLANA',
+        },
+        amount: {
+          amountInBaseUnits: '1000000000000000000',
+          amountInHumanUnits: '1',
+        },
+        messenger: 'ALLBRIDGE',
+        feePaymentMethod: 'WITH_NATIVE_CURRENCY',
+        requiredBalances: [
+          {
+            key: 'token:0xyaro-eth',
+            kind: 'source_token',
+            label: 'YARO balance',
+            chainSymbol: 'ETH',
+            tokenAddress: '0xyaro-eth',
+            requiredBaseUnits: '1000000000000000000',
+            availableBaseUnits: '1000000000000000000',
+            availableHumanUnits: '1',
+            satisfied: true,
+          },
+          {
+            key: 'native:ETH',
+            kind: 'fee_native',
+            label: 'ETH native fee balance',
+            chainSymbol: 'ETH',
+            tokenAddress: null,
+            requiredBaseUnits: '1000',
+            availableBaseUnits: '1000000000000000000',
+            availableHumanUnits: '1',
+            satisfied: true,
+          },
+        ],
+        canProceed: true,
+        nextAction: 'Balances are sufficient. You can call create_bridge_execution_job now.',
+      },
       route: {
         source: {
           symbol: 'YARO',
@@ -525,6 +593,58 @@ describe('registerAllbridgeTools', () => {
       contractAddress: undefined,
     });
     expect(result.structuredContent).toEqual({
+      balanceValidation: {
+        sourceToken: {
+          symbol: 'YARO',
+          name: 'USD Coin',
+          tokenAddress: '0xyaro-eth',
+          decimals: 18,
+          chainSymbol: 'ETH',
+          chainName: 'Ethereum',
+          chainType: 'EVM',
+        },
+        destinationToken: {
+          symbol: 'YARO',
+          name: 'YARO',
+          tokenAddress: 'yaro-sol',
+          decimals: 9,
+          chainSymbol: 'SOL',
+          chainName: 'Solana',
+          chainType: 'SOLANA',
+        },
+        amount: {
+          amountInBaseUnits: '1000000000000000000',
+          amountInHumanUnits: '1',
+        },
+        messenger: 'ALLBRIDGE',
+        feePaymentMethod: 'WITH_NATIVE_CURRENCY',
+        requiredBalances: [
+          {
+            key: 'token:0xyaro-eth',
+            kind: 'source_token',
+            label: 'YARO balance',
+            chainSymbol: 'ETH',
+            tokenAddress: '0xyaro-eth',
+            requiredBaseUnits: '1000000000000000000',
+            availableBaseUnits: '1000000000000000000',
+            availableHumanUnits: '1',
+            satisfied: true,
+          },
+          {
+            key: 'native:ETH',
+            kind: 'fee_native',
+            label: 'ETH native fee balance',
+            chainSymbol: 'ETH',
+            tokenAddress: null,
+            requiredBaseUnits: '1000',
+            availableBaseUnits: '1000000000000000000',
+            availableHumanUnits: '1',
+            satisfied: true,
+          },
+        ],
+        canProceed: true,
+        nextAction: 'Balances are sufficient. You can call create_bridge_execution_job now.',
+      },
       route: {
         source: {
           symbol: 'YARO',
@@ -567,6 +687,8 @@ describe('registerAllbridgeTools', () => {
         data: '0xbridge-data',
         value: '123',
       },
+      destinationSetup: null,
+      nextAction: 'Send the approval transaction to the signer or broadcaster first, then send the bridge transaction.',
     });
   });
 
@@ -679,7 +801,7 @@ describe('registerAllbridgeTools', () => {
     });
   });
 
-  test('build_bridge_transactions fails when mandatory balance validation does not pass', async () => {
+  test('build_bridge_transactions returns advisory balance validation when balances are insufficient', async () => {
     const sourceToken = createToken({
       symbol: 'USDC',
       tokenAddress: 'sol-usdc',
@@ -736,15 +858,101 @@ describe('registerAllbridgeTools', () => {
       outputFormat: 'json',
     });
 
-    expect(result.isError).toBe(true);
+    expect(result.isError).not.toBe(true);
     expect(result.structuredContent).toMatchObject({
-      ok: false,
-      error: {
-        code: 'insufficient_balance',
-        message: 'Insufficient balance to execute this bridge.',
+      balanceValidation: {
+        canProceed: false,
+        nextAction: 'Top up the insufficient balance(s) and rerun check_bridge_balances before create_bridge_execution_job.',
       },
+      nextAction: expect.stringContaining('Balance preflight indicates a missing balance or fee requirement'),
     });
-    expect(client.buildBridgeTx).not.toHaveBeenCalled();
+    expect(client.buildBridgeTx).toHaveBeenCalled();
+  });
+
+  test.each([
+    {
+      label: 'Stellar',
+      destinationToken: createToken({
+        symbol: 'USDC',
+        name: 'USD Coin',
+        decimals: 7,
+        tokenAddress: 'stellar-usdc',
+        chainSymbol: 'XLM',
+        chainName: 'Stellar',
+        chainType: 'SRB',
+      }),
+      recipientAddress: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF',
+      setupMock: () => client.checkStellarBalanceLine.mockRejectedValueOnce(new AllbridgeApiError('missing trustline', 404)),
+      expectedSetup: {
+        required: true,
+        chainFamily: 'SRB',
+        chainSymbol: 'XLM',
+        accountAddress: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF',
+        checkTool: 'check_stellar_trustline',
+        buildTool: 'build_stellar_trustline_transaction',
+      },
+    },
+    {
+      label: 'Algorand',
+      destinationToken: createToken({
+        symbol: 'USDC',
+        name: 'USD Coin',
+        decimals: 6,
+        tokenAddress: 'alg-usdc',
+        chainSymbol: 'ALGO',
+        chainName: 'Algorand',
+        chainType: 'ALG',
+      }),
+      recipientAddress: 'VF6Y2AUGWTWZK7EF2K7A6ZN6TBVAEUCVPA6HQBHENLOXZXHPFWFNYKF2YQ',
+      setupMock: () => client.checkAlgorandOptIn.mockResolvedValueOnce(false),
+      expectedSetup: {
+        required: true,
+        chainFamily: 'ALG',
+        chainSymbol: 'ALGO',
+        accountAddress: 'VF6Y2AUGWTWZK7EF2K7A6ZN6TBVAEUCVPA6HQBHENLOXZXHPFWFNYKF2YQ',
+        checkTool: 'check_algorand_optin',
+        buildTool: 'build_algorand_optin_transaction',
+      },
+    },
+  ])('build_bridge_transactions detects $label destination setup requirements', async ({
+    destinationToken,
+    recipientAddress,
+    setupMock,
+    expectedSetup,
+  }) => {
+    const sourceToken = createToken({
+      symbol: 'USDC',
+      name: 'USD Coin',
+      decimals: 6,
+      tokenAddress: 'eth-usdc',
+    });
+
+    client.getTokens.mockResolvedValue([sourceToken, destinationToken]);
+    client.checkBridgeAllowance.mockResolvedValue(true);
+    client.buildBridgeTx.mockResolvedValue({
+      from: '0x1111111111111111111111111111111111111111',
+      to: '0xbridge',
+      data: '0xbridge-data',
+      value: '0',
+    });
+    setupMock();
+
+    const result = await server.getHandler('build_bridge_transactions')({
+      sourceTokenAddress: sourceToken.tokenAddress,
+      destinationTokenAddress: destinationToken.tokenAddress,
+      senderAddress: '0x1111111111111111111111111111111111111111',
+      recipientAddress,
+      amount: '1',
+      amountUnit: 'human',
+      messenger: 'ALLBRIDGE',
+      feePaymentMethod: 'WITH_NATIVE_CURRENCY',
+      outputFormat: 'json',
+    });
+
+    expect(result.structuredContent.destinationSetup).toMatchObject(expectedSetup);
+    expect(result.structuredContent.destinationSetup.required).toBe(true);
+    expect(result.structuredContent.nextAction).toContain(expectedSetup.checkTool);
+    expect(result.structuredContent.nextAction).toContain(expectedSetup.buildTool);
   });
 
   test('check_bridge_balances combines source amount and stable fee on the source token', async () => {
@@ -943,6 +1151,58 @@ describe('registerAllbridgeTools', () => {
       bridgePortalName: 'Allbridge Core',
       bridgePortalUrl: 'https://core.allbridge.io',
       bridgePortalDeepLink: 'https://core.allbridge.io/?f=ETH&t=SOL&ft=YARO&tt=YARO&send=1&messenger=ALLBRIDGE',
+      balanceValidation: {
+        sourceToken: {
+          symbol: 'YARO',
+          name: 'USD Coin',
+          tokenAddress: '0xyaro-eth',
+          decimals: 18,
+          chainSymbol: 'ETH',
+          chainName: 'Ethereum',
+          chainType: 'EVM',
+        },
+        destinationToken: {
+          symbol: 'YARO',
+          name: 'YARO',
+          tokenAddress: 'yaro-sol',
+          decimals: 9,
+          chainSymbol: 'SOL',
+          chainName: 'Solana',
+          chainType: 'SOLANA',
+        },
+        amount: {
+          amountInBaseUnits: '1000000000000000000',
+          amountInHumanUnits: '1',
+        },
+        messenger: 'ALLBRIDGE',
+        feePaymentMethod: 'WITH_NATIVE_CURRENCY',
+        requiredBalances: [
+          {
+            key: 'token:0xyaro-eth',
+            kind: 'source_token',
+            label: 'YARO balance',
+            chainSymbol: 'ETH',
+            tokenAddress: '0xyaro-eth',
+            requiredBaseUnits: '1000000000000000000',
+            availableBaseUnits: '1000000000000000000',
+            availableHumanUnits: '1',
+            satisfied: true,
+          },
+          {
+            key: 'native:ETH',
+            kind: 'fee_native',
+            label: 'ETH native fee balance',
+            chainSymbol: 'ETH',
+            tokenAddress: null,
+            requiredBaseUnits: '1000',
+            availableBaseUnits: '1000000000000000000',
+            availableHumanUnits: '1',
+            satisfied: true,
+          },
+        ],
+        canProceed: true,
+        nextAction: 'Balances are sufficient. You can call create_bridge_execution_job now.',
+      },
       route: {
         source: {
           symbol: 'YARO',
@@ -1069,7 +1329,9 @@ describe('registerAllbridgeTools', () => {
           sourceChain: 'ETH',
           txId: '<source transaction hash>',
         },
+        historyUrlTemplate: 'https://core.allbridge.io/history/ETH/{txId}',
       },
+      destinationSetup: null,
       nextAction: 'Send the approve step to local-signer-mcp for EVM or broadcast the signed approve step with allbridge-mcp, then continue with the bridge step.',
     });
     expect(typeof result.structuredContent.jobId).toBe('string');
@@ -1384,6 +1646,389 @@ describe('registerAllbridgeTools', () => {
       receive: {
         txId: '0xreceive',
       },
+      historyUrl: 'https://core.allbridge.io/history/ETH/0xtx',
+    });
+  });
+
+  test('search_allbridge_transfers returns explorer matches for an address query', async () => {
+    explorerClient.search.mockResolvedValue([
+      {
+        chainSymbol: 'SOL',
+        itemType: 'Address',
+        value: 'Dr7ZcDCLAFFsZkYJpzdKfQSb4r2sEiMKZLXCN4mqe92D',
+      },
+    ]);
+    explorerClient.listTransfers.mockResolvedValue({
+      items: [
+        {
+          transferId: '0xde477a5db37e3cfeb35aaa7c3f68da3dfe5c5034966d19c89c5a7b10c981e76d',
+          fromChainSymbol: 'SOL',
+          toChainSymbol: 'ARB',
+          fromAddress: 'Dr7ZcDCLAFFsZkYJpzdKfQSb4r2sEiMKZLXCN4mqe92D',
+          toAddress: '7Qb5cT5E4Nw7iTg4W4k5m9d3x1Yy2Zz3AaBbCcDdEeF',
+          fromAmount: '15551.476689',
+          sendTransactionHash: '0xsource',
+          messagingTransactionHash: '0xmessage',
+          receiveTransactionHash: '0xreceive',
+          status: 'complete',
+          timestamp: 1776637313000,
+        },
+      ],
+    });
+
+    const result = await server.getHandler('search_allbridge_transfers')({
+      query: 'Dr7ZcDCLAFFsZkYJpzdKfQSb4r2sEiMKZLXCN4mqe92D',
+      limit: 10,
+    });
+
+    expect(explorerClient.search).toHaveBeenCalledWith('Dr7ZcDCLAFFsZkYJpzdKfQSb4r2sEiMKZLXCN4mqe92D');
+    expect(explorerClient.listTransfers).toHaveBeenCalledWith({
+      account: 'Dr7ZcDCLAFFsZkYJpzdKfQSb4r2sEiMKZLXCN4mqe92D',
+      page: 1,
+      limit: 10,
+    });
+    expect(result.structuredContent).toMatchObject({
+      mode: 'search',
+      query: 'Dr7ZcDCLAFFsZkYJpzdKfQSb4r2sEiMKZLXCN4mqe92D',
+      searchMatchCount: 1,
+      searchMatches: [
+        {
+          chainSymbol: 'SOL',
+          itemType: 'Address',
+          value: 'Dr7ZcDCLAFFsZkYJpzdKfQSb4r2sEiMKZLXCN4mqe92D',
+        },
+      ],
+      resolvedBy: ['address'],
+      resultCount: 1,
+      results: [
+        {
+          transferId: '0xde477a5db37e3cfeb35aaa7c3f68da3dfe5c5034966d19c89c5a7b10c981e76d',
+          sourceChainSymbol: 'SOL',
+          destinationChainSymbol: 'ARB',
+          senderAddress: 'Dr7ZcDCLAFFsZkYJpzdKfQSb4r2sEiMKZLXCN4mqe92D',
+          recipientAddress: '7Qb5cT5E4Nw7iTg4W4k5m9d3x1Yy2Zz3AaBbCcDdEeF',
+          sourceTxId: '0xsource',
+          messagingTxId: '0xmessage',
+          receiveTxId: '0xreceive',
+          amount: '15551.476689',
+          status: 'complete',
+          createdAt: '2026-04-23T12:00:00Z',
+          historyUrl: 'https://core.allbridge.io/history/SOL/0xsource',
+          explorerUrl: 'https://explorer.api.allbridgecoreapi.net/transfers/0xde477a5db37e3cfeb35aaa7c3f68da3dfe5c5034966d19c89c5a7b10c981e76d',
+        },
+      ],
+    });
+    expect((result.structuredContent.results as Array<Record<string, unknown>>)[0].matchTypes).toContain('senderAddress');
+  });
+
+  test('search_allbridge_transfers lists transfers by direct filters without query search', async () => {
+    client.getTokens.mockResolvedValue([
+      createToken({
+        symbol: 'USDC',
+        chainSymbol: 'SOL',
+        chainName: 'Solana',
+        chainType: 'SOLANA',
+      }),
+      createToken({
+        symbol: 'USDC',
+        chainSymbol: 'ARB',
+        chainName: 'Arbitrum',
+        chainType: 'EVM',
+      }),
+    ]);
+    explorerClient.listTransfers.mockResolvedValue({
+      items: [
+        {
+          transferId: '0xtransfer',
+          fromChainSymbol: 'SOL',
+          toChainSymbol: 'ARB',
+          fromAddress: '9solAddress',
+          toAddress: '0xarbAddress',
+          fromAmount: '15551.476689',
+          sendTransactionHash: '0xsource',
+          status: 'complete',
+        },
+      ],
+    });
+
+    const result = await server.getHandler('search_allbridge_transfers')({
+      account: '9solAddress',
+      chain: 'Solana',
+      from: undefined,
+      to: undefined,
+      status: 'complete',
+      minFromAmount: 15000,
+      limit: 10,
+      page: 2,
+    });
+
+    expect(explorerClient.listTransfers).toHaveBeenCalledWith({
+      account: '9solAddress',
+      chain: 'SOL',
+      from: undefined,
+      to: undefined,
+      minFromAmount: 15000,
+      maxFromAmount: undefined,
+      status: 'Complete',
+      page: 2,
+      limit: 10,
+    });
+    expect(result.structuredContent).toMatchObject({
+      mode: 'recent',
+      query: null,
+      appliedFilters: {
+        account: '9solAddress',
+        chain: 'SOL',
+        minFromAmount: 15000,
+        status: 'Complete',
+        page: 2,
+        limit: 10,
+      },
+      searchMatchCount: 0,
+      resultCount: 1,
+      results: [
+        {
+          transferId: '0xtransfer',
+          sourceChainSymbol: 'SOL',
+          destinationChainSymbol: 'ARB',
+          senderAddress: '9solAddress',
+          recipientAddress: '0xarbAddress',
+          sourceTxId: '0xsource',
+          amount: '15551.476689',
+          status: 'complete',
+          explorerUrl: 'https://explorer.api.allbridgecoreapi.net/transfers/0xtransfer',
+        },
+      ],
+    });
+  });
+
+  test('search_allbridge_transfers lists transfers by direction filters', async () => {
+    explorerClient.listTransfers.mockResolvedValue({
+      items: [
+        {
+          transferId: '0xtransfer',
+          fromChainSymbol: 'SOL',
+          toChainSymbol: 'ARB',
+          fromAddress: '9solAddress',
+          toAddress: '0xarbAddress',
+          fromAmount: '15551.476689',
+          sendTransactionHash: '0xsource',
+          receiveTransactionHash: '0xreceive',
+          status: 'complete',
+        },
+      ],
+    });
+
+    const result = await server.getHandler('search_allbridge_transfers')({
+      from: 'Solana',
+      to: 'Arbitrum',
+      limit: 10,
+    });
+
+    expect(explorerClient.listTransfers).toHaveBeenCalledWith({
+      account: undefined,
+      chain: undefined,
+      from: 'SOL',
+      to: 'ARB',
+      minFromAmount: undefined,
+      maxFromAmount: undefined,
+      status: undefined,
+      page: 1,
+      limit: 10,
+    });
+    expect(result.structuredContent).toMatchObject({
+      mode: 'recent',
+      query: null,
+      appliedFilters: {
+        from: 'SOL',
+        to: 'ARB',
+        page: 1,
+        limit: 10,
+      },
+      searchMatchCount: 0,
+      resultCount: 1,
+      results: [
+        {
+          transferId: '0xtransfer',
+          sourceChainSymbol: 'SOL',
+          destinationChainSymbol: 'ARB',
+          senderAddress: '9solAddress',
+          recipientAddress: '0xarbAddress',
+          sourceTxId: '0xsource',
+          receiveTxId: '0xreceive',
+          amount: '15551.476689',
+          status: 'complete',
+          explorerUrl: 'https://explorer.api.allbridgecoreapi.net/transfers/0xtransfer',
+        },
+      ],
+    });
+  });
+
+  test('search_allbridge_transfers rejects query search combined with direct filters', async () => {
+    const result = await server.getHandler('search_allbridge_transfers')({
+      query: 'Dr7ZcDCLAFFsZkYJpzdKfQSb4r2sEiMKZLXCN4mqe92D',
+      account: '9solAddress',
+      limit: 10,
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.structuredContent).toMatchObject({
+      ok: false,
+      error: {
+        code: 'validation_error',
+      },
+    });
+  });
+
+  test('search_allbridge_transfers rejects chain combined with from or to', async () => {
+    const result = await server.getHandler('search_allbridge_transfers')({
+      chain: 'ETH',
+      from: 'SOL',
+      limit: 10,
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.structuredContent).toMatchObject({
+      ok: false,
+      error: {
+        code: 'validation_error',
+      },
+    });
+  });
+
+  test('search_allbridge_transfers lists recent transfers when query is omitted', async () => {
+    explorerClient.listTransfers.mockResolvedValue({
+      items: [
+        {
+          id: '0xde477a5db37e3cfeb35aaa7c3f68da3dfe5c5034966d19c89c5a7b10c981e76d',
+          senderAddress: 'Dr7ZcDCLAFFsZkYJpzdKfQSb4r2sEiMKZLXCN4mqe92D',
+          status: 'completed',
+        },
+      ],
+    });
+
+    const result = await server.getHandler('search_allbridge_transfers')({
+      limit: 10,
+    });
+
+    expect(explorerClient.listTransfers).toHaveBeenCalledWith({
+      page: 1,
+      limit: 10,
+    });
+    expect(result.structuredContent).toMatchObject({
+      mode: 'recent',
+      query: null,
+      searchMatchCount: 0,
+      searchMatches: [],
+      resolvedBy: [],
+      resultCount: 1,
+      results: [
+        {
+          transferId: '0xde477a5db37e3cfeb35aaa7c3f68da3dfe5c5034966d19c89c5a7b10c981e76d',
+          senderAddress: 'Dr7ZcDCLAFFsZkYJpzdKfQSb4r2sEiMKZLXCN4mqe92D',
+          status: 'completed',
+          explorerUrl: 'https://explorer.api.allbridgecoreapi.net/transfers/0xde477a5db37e3cfeb35aaa7c3f68da3dfe5c5034966d19c89c5a7b10c981e76d',
+        },
+      ],
+    });
+  });
+
+  test('search_allbridge_transfers resolves a transfer hash through the explorer search index', async () => {
+    explorerClient.search.mockResolvedValue([
+      {
+        chainSymbol: '',
+        itemType: 'Transfer',
+        value: '0xde477a5db37e3cfeb35aaa7c3f68da3dfe5c5034966d19c89c5a7b10c981e76d',
+      },
+    ]);
+    explorerClient.getTransfer.mockResolvedValue({
+      transfer: {
+        id: '0xde477a5db37e3cfeb35aaa7c3f68da3dfe5c5034966d19c89c5a7b10c981e76d',
+        fromChainSymbol: 'SOL',
+        toChainSymbol: 'ARB',
+        fromAddress: 'Dr7ZcDCLAFFsZkYJpzdKfQSb4r2sEiMKZLXCN4mqe92D',
+        toAddress: '7Qb5cT5E4Nw7iTg4W4k5m9d3x1Yy2Zz3AaBbCcDdEeF',
+        fromAmount: '15551.476689',
+        sendTransactionHash: '3MjCur95HKzhud2ubxtumHn8HuQNwtPkVS9nyyMc8UyN5Md6T1tGMUwB3tfvWhiBT6YBDCJnvdGfznF8spxwRWS5',
+        receiveTransactionHash: '0xreceive',
+        status: 'completed',
+      },
+    });
+
+    const result = await server.getHandler('search_allbridge_transfers')({
+      query: '3MjCur95HKzhud2ubxtumHn8HuQNwtPkVS9nyyMc8UyN5Md6T1tGMUwB3tfvWhiBT6YBDCJnvdGfznF8spxwRWS5',
+      limit: 10,
+    });
+
+    expect(explorerClient.search).toHaveBeenCalledWith('3MjCur95HKzhud2ubxtumHn8HuQNwtPkVS9nyyMc8UyN5Md6T1tGMUwB3tfvWhiBT6YBDCJnvdGfznF8spxwRWS5');
+    expect(explorerClient.getTransfer).toHaveBeenCalledWith('0xde477a5db37e3cfeb35aaa7c3f68da3dfe5c5034966d19c89c5a7b10c981e76d');
+    expect(result.structuredContent).toMatchObject({
+      mode: 'search',
+      query: '3MjCur95HKzhud2ubxtumHn8HuQNwtPkVS9nyyMc8UyN5Md6T1tGMUwB3tfvWhiBT6YBDCJnvdGfznF8spxwRWS5',
+      searchMatchCount: 1,
+      searchMatches: [
+        {
+          chainSymbol: '',
+          itemType: 'Transfer',
+          value: '0xde477a5db37e3cfeb35aaa7c3f68da3dfe5c5034966d19c89c5a7b10c981e76d',
+        },
+      ],
+      resolvedBy: ['transfer'],
+      resultCount: 1,
+      results: [
+        {
+          transferId: '0xde477a5db37e3cfeb35aaa7c3f68da3dfe5c5034966d19c89c5a7b10c981e76d',
+          sourceChainSymbol: 'SOL',
+          destinationChainSymbol: 'ARB',
+          senderAddress: 'Dr7ZcDCLAFFsZkYJpzdKfQSb4r2sEiMKZLXCN4mqe92D',
+          recipientAddress: '7Qb5cT5E4Nw7iTg4W4k5m9d3x1Yy2Zz3AaBbCcDdEeF',
+          sourceTxId: '3MjCur95HKzhud2ubxtumHn8HuQNwtPkVS9nyyMc8UyN5Md6T1tGMUwB3tfvWhiBT6YBDCJnvdGfznF8spxwRWS5',
+          receiveTxId: '0xreceive',
+          amount: '15551.476689',
+          status: 'completed',
+          historyUrl: 'https://core.allbridge.io/history/SOL/3MjCur95HKzhud2ubxtumHn8HuQNwtPkVS9nyyMc8UyN5Md6T1tGMUwB3tfvWhiBT6YBDCJnvdGfznF8spxwRWS5',
+          explorerUrl: 'https://explorer.api.allbridgecoreapi.net/transfers/0xde477a5db37e3cfeb35aaa7c3f68da3dfe5c5034966d19c89c5a7b10c981e76d',
+        },
+      ],
+    });
+    expect((result.structuredContent.results as Array<Record<string, unknown>>)[0].matchTypes).toContain('sourceTxId');
+  });
+
+  test('get_allbridge_transfer returns a single explorer transfer with raw details', async () => {
+    explorerClient.getTransfer.mockResolvedValue({
+      transfer: {
+        id: '0xde477a5db37e3cfeb35aaa7c3f68da3dfe5c5034966d19c89c5a7b10c981e76d',
+        fromChainSymbol: 'ETH',
+        toChainSymbol: 'ARB',
+        fromAddress: 'Dr7ZcDCLAFFsZkYJpzdKfQSb4r2sEiMKZLXCN4mqe92D',
+        toAddress: '7Qb5cT5E4Nw7iTg4W4k5m9d3x1Yy2Zz3AaBbCcDdEeF',
+        fromAmount: '1',
+        sendTransactionHash: '0xsource',
+        receiveTransactionHash: '0xreceive',
+        status: 'completed',
+      },
+    });
+
+    const result = await server.getHandler('get_allbridge_transfer')({
+      transferId: '0xde477a5db37e3cfeb35aaa7c3f68da3dfe5c5034966d19c89c5a7b10c981e76d',
+    });
+
+    expect(explorerClient.getTransfer).toHaveBeenCalledWith('0xde477a5db37e3cfeb35aaa7c3f68da3dfe5c5034966d19c89c5a7b10c981e76d');
+    expect(result.structuredContent.transfer).toMatchObject({
+      transferId: '0xde477a5db37e3cfeb35aaa7c3f68da3dfe5c5034966d19c89c5a7b10c981e76d',
+      sourceChainSymbol: 'ETH',
+      destinationChainSymbol: 'ARB',
+      senderAddress: 'Dr7ZcDCLAFFsZkYJpzdKfQSb4r2sEiMKZLXCN4mqe92D',
+      recipientAddress: '7Qb5cT5E4Nw7iTg4W4k5m9d3x1Yy2Zz3AaBbCcDdEeF',
+      sourceTxId: '0xsource',
+      receiveTxId: '0xreceive',
+      amount: '1',
+      status: 'completed',
+      historyUrl: 'https://core.allbridge.io/history/ETH/0xsource',
+      explorerUrl: 'https://explorer.api.allbridgecoreapi.net/transfers/0xde477a5db37e3cfeb35aaa7c3f68da3dfe5c5034966d19c89c5a7b10c981e76d',
+    });
+    expect((result.structuredContent.transfer as Record<string, unknown>).raw).toMatchObject({
+      id: '0xde477a5db37e3cfeb35aaa7c3f68da3dfe5c5034966d19c89c5a7b10c981e76d',
     });
   });
 

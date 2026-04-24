@@ -12,6 +12,17 @@ import {
 } from './constants.js';
 import { AllbridgeApiError, type AllbridgeApiClient } from './allbridge-api-client.js';
 import {
+  AllbridgeExplorerApiError,
+  type AllbridgeExplorerApiClient,
+  type ExplorerTransfersListParams,
+  normalizeExplorerSearchResults,
+  normalizeExplorerTransfer,
+  normalizeExplorerTransfers,
+  type ExplorerSearchResult,
+  type ExplorerTransferSummary,
+} from './explorer-api-client.js';
+import { config } from './config.js';
+import {
   loadChainCatalog,
   resolveChainFromCatalog,
   resolveTokenByAddressFromCatalog,
@@ -33,6 +44,7 @@ const feePaymentMethodSchema = z.enum(FEE_PAYMENT_METHODS);
 const amountUnitSchema = z.enum(AMOUNT_UNITS);
 const outputFormatSchema = z.enum(OUTPUT_FORMATS);
 const bridgePortalUrl = 'https://core.allbridge.io';
+const bridgeHistoryUrlBase = 'https://core.allbridge.io/history';
 
 function requiredTextSchema(description: string) {
   return z.string().trim().min(1).describe(description);
@@ -122,6 +134,17 @@ const signedTransactionSchema = z.discriminatedUnion('chainFamily', [
   srbSignedTransactionSchema,
   suiSignedTransactionSchema,
 ]);
+
+const signedTransactionInputSchema = {
+  chainFamily: z.enum(['EVM', 'SOLANA', 'TRX', 'ALG', 'STX', 'SRB', 'SUI']).describe('Chain family for the signed transaction.'),
+  chainId: z.number().int().positive().optional().describe('Required for EVM transactions.'),
+  chainSymbol: z.string().trim().min(1).optional().describe('Optional EVM chain symbol.'),
+  walletId: z.string().trim().min(1).optional().describe('Optional wallet selector.'),
+  signedTransaction: z.unknown().optional().describe('Signed transaction payload for EVM, Tron, or Sui.'),
+  signedTransactionHex: z.string().trim().min(1).optional().describe('Signed transaction hex payload for Solana, Stacks, or Soroban.'),
+  signedTransactionsBase64: z.array(z.string().trim().min(1)).optional().describe('Signed transaction base64 payloads for Algorand.'),
+  signedTransactionXdr: z.string().trim().min(1).optional().describe('Signed transaction XDR payload for Soroban / Stellar.'),
+};
 
 function normalizeAmount(amount: string, unit: z.infer<typeof amountUnitSchema>, token: TokenWithChainDetails): {
   amountInBaseUnits: string;
@@ -279,6 +302,16 @@ type WalletSelectorHint = {
   chainSymbol: string;
 };
 
+type DestinationSetupRequirement = {
+  required: boolean;
+  chainFamily: 'ALG' | 'SRB' | null;
+  chainSymbol: string | null;
+  accountAddress: string;
+  checkTool: 'check_algorand_optin' | 'check_stellar_trustline' | null;
+  buildTool: 'build_algorand_optin_transaction' | 'build_stellar_trustline_transaction' | null;
+  reason: string | null;
+};
+
 type ExecutionHandoff = {
   executionTarget: 'local-signer-mcp';
   executionTool: 'sign_and_broadcast_transaction';
@@ -310,6 +343,24 @@ function buildWalletSelectorHint(params: {
     chainFamily: params.sourceToken.chainType ?? null,
     chainSymbol: params.sourceToken.chainSymbol,
   };
+}
+
+function buildHistoryUrl(sourceChainSymbol: string | null | undefined, sourceTxId: string | null | undefined): string | null {
+  const chain = typeof sourceChainSymbol === 'string' ? sourceChainSymbol.trim() : '';
+  const txId = typeof sourceTxId === 'string' ? sourceTxId.trim() : '';
+
+  if (!chain || !txId) {
+    return null;
+  }
+
+  return new URL(
+    `${encodeURIComponent(chain)}/${encodeURIComponent(txId)}`,
+    `${bridgeHistoryUrlBase}/`,
+  ).toString();
+}
+
+function buildHistoryUrlTemplate(sourceChainSymbol: string): string {
+  return `${bridgeHistoryUrlBase}/${encodeURIComponent(sourceChainSymbol)}/{txId}`;
 }
 
 function addBaseUnits(left: string, right: string): string {
@@ -368,6 +419,66 @@ function buildExecutionHandoff(params: {
   };
 }
 
+async function detectDestinationSetupRequirement(
+  client: AllbridgeApiClient,
+  destinationToken: TokenWithChainDetails,
+  recipientAddress: string,
+): Promise<DestinationSetupRequirement | null> {
+  if (destinationToken.chainType === 'SRB') {
+    try {
+      await client.checkStellarBalanceLine({
+        address: recipientAddress,
+        token: destinationToken.tokenAddress,
+      });
+      return {
+        required: false,
+        chainFamily: 'SRB',
+        chainSymbol: destinationToken.chainSymbol,
+        accountAddress: recipientAddress,
+        checkTool: 'check_stellar_trustline',
+        buildTool: 'build_stellar_trustline_transaction',
+        reason: 'The destination account already has a Stellar trustline for this token.',
+      };
+    } catch (error) {
+      if (!(error instanceof AllbridgeApiError) || (error.status !== 400 && error.status !== 404)) {
+        throw error;
+      }
+
+      return {
+        required: true,
+        chainFamily: 'SRB',
+        chainSymbol: destinationToken.chainSymbol,
+        accountAddress: recipientAddress,
+        checkTool: 'check_stellar_trustline',
+        buildTool: 'build_stellar_trustline_transaction',
+        reason: 'The destination account must create a Stellar trustline before it can receive this token.',
+      };
+    }
+  }
+
+  if (destinationToken.chainType === 'ALG') {
+    const optedIn = await client.checkAlgorandOptIn({
+      sender: recipientAddress,
+      id: destinationToken.tokenAddress,
+      type: 'asset',
+    });
+
+    return {
+      required: !optedIn,
+      chainFamily: 'ALG',
+      chainSymbol: destinationToken.chainSymbol,
+      accountAddress: recipientAddress,
+      checkTool: 'check_algorand_optin',
+      buildTool: 'build_algorand_optin_transaction',
+      reason: optedIn
+        ? 'The destination account is already opted into this Algorand asset.'
+        : 'The destination account must opt into this Algorand asset before it can receive the transfer.',
+    };
+  }
+
+  return null;
+}
+
 function summarizePlan(
   sourceToken: TokenWithChainDetails,
   destinationToken: TokenWithChainDetails,
@@ -416,9 +527,11 @@ function buildExecutionJob(params: {
   recipientAddress: string;
   messenger: string;
   feePaymentMethod: string;
+  balanceValidation: BridgeBalanceValidation;
   approvalRequired: boolean;
   approvalTx: unknown;
   bridgeTx: unknown;
+  destinationSetup: DestinationSetupRequirement | null;
 }) {
   const jobId = randomUUID();
   const sourceFamily = params.sourceToken.chainType ?? 'the source chain family';
@@ -496,6 +609,7 @@ function buildExecutionJob(params: {
       recipientAddress: params.recipientAddress,
     },
     amount: params.amount,
+    balanceValidation: params.balanceValidation,
     handoff: {
       ...handoff,
       stepId: approveStep ? 'approve' : 'bridge',
@@ -514,10 +628,20 @@ function buildExecutionJob(params: {
         sourceChain: params.sourceToken.chainSymbol,
         txId: '<source transaction hash>',
       },
+      historyUrlTemplate: buildHistoryUrlTemplate(params.sourceToken.chainSymbol),
     },
-    nextAction: approveStep
-      ? `Send the approve step to local-signer-mcp for ${sourceFamily} or broadcast the signed approve step with allbridge-mcp, then continue with the bridge step.`
-      : `Send the bridge step to local-signer-mcp for ${sourceFamily} or broadcast the signed bridge step with allbridge-mcp.`,
+    destinationSetup: params.destinationSetup,
+    nextAction: [
+      params.balanceValidation.canProceed
+        ? null
+        : 'Balance preflight indicates a missing balance or fee requirement, but the bridge job was still built so you can inspect the transactions or top up before signing.',
+      approveStep
+        ? `Send the approve step to local-signer-mcp for ${sourceFamily} or broadcast the signed approve step with allbridge-mcp, then continue with the bridge step.`
+        : `Send the bridge step to local-signer-mcp for ${sourceFamily} or broadcast the signed bridge step with allbridge-mcp.`,
+      params.destinationSetup?.required
+        ? `Destination setup is also required for ${params.destinationSetup.accountAddress}: ${params.destinationSetup.reason}`
+        : null,
+    ].filter((part): part is string => Boolean(part)).join(' '),
   };
 }
 
@@ -531,8 +655,202 @@ function summarizeTransferStatus(status: Record<string, unknown>) {
     signaturesCount: status.signaturesCount ?? null,
     signaturesNeeded: status.signaturesNeeded ?? null,
     responseTime: status.responseTime ?? null,
+    historyUrl: buildHistoryUrl(
+      typeof status.sourceChainSymbol === 'string' ? status.sourceChainSymbol : null,
+      typeof status.txId === 'string' ? status.txId : null,
+    ),
     send: status.send ?? null,
     receive: status.receive ?? null,
+  };
+}
+
+function normalizeExplorerStatus(status: unknown): string | undefined {
+  if (typeof status !== 'string') {
+    return undefined;
+  }
+
+  const trimmed = status.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  const normalized = trimmed.toLowerCase();
+  if (normalized === 'complete') {
+    return 'Complete';
+  }
+
+  if (normalized === 'pending') {
+    return 'Pending';
+  }
+
+  throw new UserFacingToolError('validation_error', "Parameter 'status' must be 'Complete' or 'Pending'.", {
+    status,
+  });
+}
+
+function optionalTextValue(value: unknown): string | undefined {
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function hasDirectTransferFilters(params: Record<string, unknown>): boolean {
+  return [
+    params.account,
+    params.chain,
+    params.from,
+    params.to,
+    params.minFromAmount,
+    params.maxFromAmount,
+    params.status,
+  ].some((value) => value !== undefined && value !== null && value !== '');
+}
+
+function buildExplorerTransferListParams(
+  params: {
+    account?: unknown;
+    chain?: unknown;
+    from?: unknown;
+    to?: unknown;
+    minFromAmount?: unknown;
+    maxFromAmount?: unknown;
+    status?: unknown;
+    page?: unknown;
+    limit?: unknown;
+  },
+  catalog?: Awaited<ReturnType<typeof loadChainCatalog>>,
+): ExplorerTransfersListParams {
+  const chain = optionalTextValue(params.chain);
+  const from = optionalTextValue(params.from);
+  const to = optionalTextValue(params.to);
+
+  if (chain && (from || to)) {
+    throw new UserFacingToolError('validation_error', "Parameter 'chain' cannot be combined with 'from' or 'to'.", {
+      chain: params.chain ?? null,
+      from: params.from ?? null,
+      to: params.to ?? null,
+    });
+  }
+
+  if ((chain || from || to) && !catalog) {
+    throw new UserFacingToolError('validation_error', 'Chain filters require the token catalog to be loaded first.', {
+      chain: params.chain ?? null,
+      from: params.from ?? null,
+      to: params.to ?? null,
+    });
+  }
+
+  const resolvedChain = chain ? resolveChainFromCatalog(catalog!, chain, 'chain').chainSymbol : undefined;
+  const resolvedFrom = from ? resolveChainFromCatalog(catalog!, from, 'from').chainSymbol : undefined;
+  const resolvedTo = to ? resolveChainFromCatalog(catalog!, to, 'to').chainSymbol : undefined;
+  const minFromAmount = typeof params.minFromAmount === 'number' ? params.minFromAmount : undefined;
+  const maxFromAmount = typeof params.maxFromAmount === 'number' ? params.maxFromAmount : undefined;
+  const status = normalizeExplorerStatus(params.status);
+  const page = typeof params.page === 'number' ? params.page : undefined;
+  const limit = typeof params.limit === 'number' ? params.limit : undefined;
+  const account = optionalTextValue(params.account);
+
+  return {
+    account,
+    chain: resolvedChain,
+    from: resolvedFrom,
+    to: resolvedTo,
+    minFromAmount,
+    maxFromAmount,
+    status,
+    page,
+    limit,
+  };
+}
+
+function transferKey(transfer: ExplorerTransferSummary): string | null {
+  return transfer.transferId
+    ?? transfer.sourceTxId
+    ?? transfer.messagingTxId
+    ?? transfer.receiveTxId
+    ?? null;
+}
+
+function dedupeTransfers(transfers: ExplorerTransferSummary[]): ExplorerTransferSummary[] {
+  const seen = new Set<string>();
+  const result: ExplorerTransferSummary[] = [];
+
+  for (const transfer of transfers) {
+    const key = transferKey(transfer);
+    if (!key || seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    result.push(transfer);
+  }
+
+  return result;
+}
+
+function uniqueNonEmpty(values: Array<string | null | undefined>): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+
+  for (const value of values) {
+    const trimmed = typeof value === 'string' ? value.trim() : '';
+    if (!trimmed || seen.has(trimmed)) {
+      continue;
+    }
+
+    seen.add(trimmed);
+    result.push(trimmed);
+  }
+
+  return result;
+}
+
+async function resolveExplorerSearchTransfers(
+  explorerClient: AllbridgeExplorerApiClient,
+  baseURL: string,
+  query: string,
+  page: number,
+  limit: number,
+): Promise<{
+  searchMatches: ExplorerSearchResult[];
+  resolvedTransfers: ExplorerTransferSummary[];
+  resolvedBy: Array<'address' | 'transfer'>;
+}> {
+  const searchMatches = normalizeExplorerSearchResults(await explorerClient.search(query));
+  const resolvedBy = new Set<'address' | 'transfer'>();
+  const resolvedTransfers: ExplorerTransferSummary[] = [];
+
+  const lookupTasks = searchMatches.map(async (match) => {
+    if (match.itemType === 'Address' && match.value) {
+      resolvedBy.add('address');
+      const response = await explorerClient.listTransfers({
+        account: match.value,
+        page,
+        limit,
+      });
+      return normalizeExplorerTransfers(response, baseURL, query);
+    }
+
+    if (match.itemType === 'Transfer' && match.value) {
+      resolvedBy.add('transfer');
+      const response = await explorerClient.getTransfer(match.value);
+      return [normalizeExplorerTransfer(response, baseURL, match.value, query)];
+    }
+
+    return [];
+  });
+
+  for (const batch of await Promise.all(lookupTasks)) {
+    resolvedTransfers.push(...batch);
+  }
+
+  return {
+    searchMatches,
+    resolvedTransfers: dedupeTransfers(resolvedTransfers).slice(0, limit),
+    resolvedBy: [...resolvedBy],
   };
 }
 
@@ -605,6 +923,7 @@ async function buildQuoteFallback(
 export function registerAllbridgeTools(
   server: McpServer,
   client: AllbridgeApiClient,
+  explorerClient: AllbridgeExplorerApiClient,
   dependencies: ToolDependencies = defaultDependencies,
 ): void {
   type ToolResult = {
@@ -909,14 +1228,14 @@ export function registerAllbridgeTools(
     validateAddressForChainType(args.senderAddress, sourceToken.chainType ?? null, 'senderAddress');
     validateAddressForChainType(args.recipientAddress, destinationToken.chainType ?? null, 'recipientAddress');
 
-    await validateBridgeBalances({
+    const balanceValidation = await validateBridgeBalances({
       sourceToken,
       destinationToken,
       senderAddress: args.senderAddress,
       amount: normalizedAmount,
       messenger: args.messenger,
       feePaymentMethod: args.feePaymentMethod,
-      strict: true,
+      strict: false,
     });
 
     const approvalRequired = needsBridgeApproval(sourceToken.chainType)
@@ -952,13 +1271,21 @@ export function registerAllbridgeTools(
       outputFormat: args.outputFormat,
     });
 
+    const destinationSetup = await detectDestinationSetupRequirement(
+      client,
+      destinationToken,
+      args.recipientAddress,
+    );
+
     return {
       sourceToken,
       destinationToken,
       normalizedAmount,
+      balanceValidation,
       approvalRequired,
       approvalTx,
       bridgeTx,
+      destinationSetup,
     };
   }
 
@@ -1214,7 +1541,7 @@ export function registerAllbridgeTools(
     {
       title: 'Create Bridge Execution Job',
       description:
-        'Create an ordered bridge execution job with explicit signing steps for an external wallet or signer. Use after the bridge route and quote are known. Balance validation is mandatory before execution. Works for all supported source chain families, including EVM, Solana, Tron, Algorand, Stacks, Soroban/Stellar, and Sui.',
+        'Create an ordered bridge execution job with explicit signing steps for an external wallet or signer. Use after the bridge route and quote are known. Balance validation is returned as advisory data, not a hard stop. Works for all supported source chain families, including EVM, Solana, Tron, Algorand, Stacks, Soroban/Stellar, and Sui.',
       inputSchema: {
         sourceTokenAddress: requiredTextSchema('Source token address. Do not pass null.'),
         destinationTokenAddress: requiredTextSchema('Destination token address. Do not pass null.'),
@@ -1247,6 +1574,7 @@ export function registerAllbridgeTools(
           sourceToken: built.sourceToken,
           destinationToken: built.destinationToken,
           amount: built.normalizedAmount,
+          balanceValidation: built.balanceValidation,
           senderAddress: requireText(parsed.senderAddress, 'senderAddress'),
           walletId: optionalText(parsed.walletId),
           recipientAddress: requireText(parsed.recipientAddress, 'recipientAddress'),
@@ -1255,6 +1583,7 @@ export function registerAllbridgeTools(
           approvalRequired: built.approvalRequired,
           approvalTx: built.approvalTx,
           bridgeTx: built.bridgeTx,
+          destinationSetup: built.destinationSetup,
         });
       });
     },
@@ -1265,7 +1594,7 @@ export function registerAllbridgeTools(
     {
       title: 'Build Bridge Transactions',
       description:
-        'Build raw approval and bridge transactions for an Allbridge transfer after the route, sender, recipient, and amount are known. Balance validation is mandatory before building transactions. Works for all supported source chain families.',
+        'Build raw approval and bridge transactions for an Allbridge transfer after the route, sender, recipient, and amount are known. Balance validation is returned as advisory data, not a hard stop. Works for all supported source chain families.',
       inputSchema: {
         sourceTokenAddress: requiredTextSchema('Source token address. Do not pass null.'),
         destinationTokenAddress: requiredTextSchema('Destination token address. Do not pass null.'),
@@ -1303,12 +1632,213 @@ export function registerAllbridgeTools(
             feePaymentMethod: parsed.feePaymentMethod,
           },
           amount: built.normalizedAmount,
+          balanceValidation: built.balanceValidation,
           approvalRequired: built.approvalRequired,
           approvalTxShape: built.approvalTx ? txShape(built.approvalTx) : null,
           bridgeTxShape: txShape(built.bridgeTx),
           approvalTx: built.approvalTx,
           bridgeTx: built.bridgeTx,
+          destinationSetup: built.destinationSetup,
+          nextAction: `${built.approvalRequired ? 'Send the approval transaction to the signer or broadcaster first, then send the bridge transaction.' : 'Send the returned bridge transaction to the signer or broadcaster.'}${built.destinationSetup?.required ? ` The destination account at ${built.destinationSetup.accountAddress} still needs a prerequisite transaction before it can receive the bridged asset. Use ${built.destinationSetup.checkTool} to confirm and ${built.destinationSetup.buildTool} to build it if needed.` : ''}`,
         };
+      });
+    },
+  );
+
+  server.registerTool(
+    'check_stellar_trustline',
+    {
+      title: 'Check Stellar Trustline',
+      description:
+        'Check whether a Stellar account already has a trustline for the given token.',
+      inputSchema: {
+        address: requiredTextSchema('Stellar account address. Do not pass null.'),
+        tokenAddress: requiredTextSchema('Stellar token address. Do not pass null.'),
+      },
+    },
+    async (parsed) => {
+      return runTool(async () => {
+        try {
+          const address = requireText(parsed.address, 'address');
+          const tokenAddress = requireText(parsed.tokenAddress, 'tokenAddress');
+          const balanceLine = await client.checkStellarBalanceLine({
+            address,
+            token: tokenAddress,
+          });
+
+          return {
+            address,
+            tokenAddress,
+            required: false,
+            balanceLine,
+            nextAction: 'The account already has a Stellar trustline for this token.',
+          };
+        } catch (error) {
+          if (error instanceof AllbridgeApiError) {
+            if (error.status === 400 || error.status === 404) {
+              return {
+                address: parsed.address ?? null,
+                tokenAddress: parsed.tokenAddress ?? null,
+                required: true,
+                balanceLine: null,
+                nextAction: 'Create a Stellar trustline before sending this token to the account.',
+              };
+            }
+
+            throw new UserFacingToolError('validation_error', 'Unable to check the Stellar trustline.', {
+              address: parsed.address ?? null,
+              tokenAddress: parsed.tokenAddress ?? null,
+              reason: error.message,
+              status: error.status ?? null,
+              details: error.details ?? null,
+            });
+          }
+
+          throw error;
+        }
+      });
+    },
+  );
+
+  server.registerTool(
+    'build_stellar_trustline_transaction',
+    {
+      title: 'Build Stellar Trustline Transaction',
+      description:
+        'Build a Stellar change trustline transaction for a recipient account.',
+      inputSchema: {
+        accountAddress: requiredTextSchema('Stellar account address. Do not pass null.'),
+        tokenAddress: requiredTextSchema('Stellar token address. Do not pass null.'),
+        limit: optionalTextSchema('Optional trustline limit.'),
+      },
+    },
+    async (parsed) => {
+      return runTool(async () => {
+        try {
+          const accountAddress = requireText(parsed.accountAddress, 'accountAddress');
+          const tokenAddress = requireText(parsed.tokenAddress, 'tokenAddress');
+          const transaction = await client.buildStellarTrustlineTransaction({
+            sender: accountAddress,
+            tokenAddress,
+            limit: optionalText(parsed.limit),
+          });
+
+          return {
+            accountAddress,
+            tokenAddress,
+            transaction,
+          };
+        } catch (error) {
+          if (error instanceof AllbridgeApiError) {
+            throw new UserFacingToolError('validation_error', 'Unable to build the Stellar trustline transaction.', {
+              accountAddress: parsed.accountAddress ?? null,
+              tokenAddress: parsed.tokenAddress ?? null,
+              limit: parsed.limit ?? null,
+              reason: error.message,
+              status: error.status ?? null,
+              details: error.details ?? null,
+            });
+          }
+
+          throw error;
+        }
+      });
+    },
+  );
+
+  server.registerTool(
+    'check_algorand_optin',
+    {
+      title: 'Check Algorand Opt-In',
+      description:
+        'Check whether an Algorand account is already opted into the given asset or app.',
+      inputSchema: {
+        accountAddress: requiredTextSchema('Algorand account address. Do not pass null.'),
+        id: requiredTextSchema('Asset or app id. Do not pass null.'),
+        type: z.enum(['asset', 'app']).default('asset'),
+      },
+    },
+    async (parsed) => {
+      return runTool(async () => {
+        try {
+          const accountAddress = requireText(parsed.accountAddress, 'accountAddress');
+          const id = requireText(parsed.id, 'id');
+          const optedIn = await client.checkAlgorandOptIn({
+            sender: accountAddress,
+            id,
+            type: parsed.type,
+          });
+
+          return {
+            accountAddress,
+            id,
+            type: parsed.type,
+            required: !optedIn,
+            nextAction: optedIn
+              ? 'The account is already opted into this Algorand asset or app.'
+              : 'Create an Algorand opt-in transaction before sending this asset to the account.',
+          };
+        } catch (error) {
+          if (error instanceof AllbridgeApiError) {
+            throw new UserFacingToolError('validation_error', 'Unable to check the Algorand opt-in state.', {
+              accountAddress: parsed.accountAddress ?? null,
+              id: parsed.id ?? null,
+              type: parsed.type ?? null,
+              reason: error.message,
+              status: error.status ?? null,
+              details: error.details ?? null,
+            });
+          }
+
+          throw error;
+        }
+      });
+    },
+  );
+
+  server.registerTool(
+    'build_algorand_optin_transaction',
+    {
+      title: 'Build Algorand Opt-In Transaction',
+      description:
+        'Build an Algorand opt-in transaction for a recipient account.',
+      inputSchema: {
+        accountAddress: requiredTextSchema('Algorand account address. Do not pass null.'),
+        id: requiredTextSchema('Asset or app id. Do not pass null.'),
+        type: z.enum(['asset', 'app']).default('asset'),
+      },
+    },
+    async (parsed) => {
+      return runTool(async () => {
+        try {
+          const accountAddress = requireText(parsed.accountAddress, 'accountAddress');
+          const id = requireText(parsed.id, 'id');
+          const transaction = await client.buildAlgorandOptInTransaction({
+            sender: accountAddress,
+            id,
+            type: parsed.type,
+          });
+
+          return {
+            accountAddress,
+            id,
+            type: parsed.type,
+            transaction,
+          };
+        } catch (error) {
+          if (error instanceof AllbridgeApiError) {
+            throw new UserFacingToolError('validation_error', 'Unable to build the Algorand opt-in transaction.', {
+              accountAddress: parsed.accountAddress ?? null,
+              id: parsed.id ?? null,
+              type: parsed.type ?? null,
+              reason: error.message,
+              status: error.status ?? null,
+              details: error.details ?? null,
+            });
+          }
+
+          throw error;
+        }
       });
     },
   );
@@ -1340,6 +1870,166 @@ export function registerAllbridgeTools(
     },
   );
 
+  server.registerTool(
+    'search_allbridge_transfers',
+    {
+      title: 'Search Allbridge Transfers',
+      description:
+        'Search or list Allbridge transfers in the public explorer. Use query to resolve typed hits (Address or Transfer), or use list filters such as account, chain, from, to, status, minFromAmount, and maxFromAmount. Omit everything to list recent transfers.',
+      inputSchema: {
+        query: optionalTextSchema('Optional search query. Omit to list recent transfers.'),
+        account: optionalTextSchema('Optional account address to list transfers for.'),
+        chain: optionalTextSchema('Optional chain filter. Can be combined with account, status, or amount filters.'),
+        from: optionalTextSchema('Optional source chain filter. Cannot be combined with chain.'),
+        to: optionalTextSchema('Optional destination chain filter. Cannot be combined with chain.'),
+        minFromAmount: z.number().min(0).optional().describe('Optional minimum source amount filter.'),
+        maxFromAmount: z.number().positive().optional().describe('Optional maximum source amount filter.'),
+        status: optionalTextSchema('Optional transfer status filter. Use Complete or Pending.'),
+        page: z.number().int().positive().default(1).describe('Page number for list mode.'),
+        limit: z.number().int().positive().max(20).default(10).describe('Maximum number of transfers to return.'),
+      },
+    },
+    async (parsed) => {
+      return runTool(async () => {
+        try {
+          const query = optionalText(parsed.query);
+          const directFiltersExist = hasDirectTransferFilters(parsed);
+          if (query && directFiltersExist) {
+            throw new UserFacingToolError('validation_error', 'Query search cannot be combined with direct transfer filters.', {
+              query,
+              account: parsed.account ?? null,
+              chain: parsed.chain ?? null,
+              from: parsed.from ?? null,
+              to: parsed.to ?? null,
+              minFromAmount: parsed.minFromAmount ?? null,
+              maxFromAmount: parsed.maxFromAmount ?? null,
+              status: parsed.status ?? null,
+            });
+          }
+
+          if (!query) {
+            const needsCatalog = Boolean(optionalText(parsed.chain) || optionalText(parsed.from) || optionalText(parsed.to));
+            const catalog = needsCatalog ? await loadChainCatalog(client) : undefined;
+            const listParams = buildExplorerTransferListParams(parsed, catalog);
+            const response = await explorerClient.listTransfers({
+              account: listParams.account,
+              chain: listParams.chain,
+              from: listParams.from,
+              to: listParams.to,
+              minFromAmount: listParams.minFromAmount,
+              maxFromAmount: listParams.maxFromAmount,
+              status: listParams.status,
+              page: listParams.page ?? 1,
+              limit: parsed.limit,
+            });
+            const transfers = normalizeExplorerTransfers(response, config.ALLBRIDGE_EXPLORER_API_BASE_URL).slice(0, parsed.limit);
+
+            return {
+              mode: 'recent',
+              query: null,
+              appliedFilters: directFiltersExist ? listParams : null,
+              searchMatchCount: 0,
+              searchMatches: [],
+              resolvedBy: [],
+              resultCount: transfers.length,
+              results: transfers,
+              nextAction: transfers.length > 0
+                ? 'Use get_allbridge_transfer with a transferId to open a single transfer.'
+                : 'Provide a query to narrow the explorer results by sender, recipient, transaction hash, or transfer ID.',
+            };
+          }
+
+          const { searchMatches, resolvedTransfers, resolvedBy } = await resolveExplorerSearchTransfers(
+            explorerClient,
+            config.ALLBRIDGE_EXPLORER_API_BASE_URL,
+            query,
+            typeof parsed.page === 'number' ? parsed.page : 1,
+            parsed.limit,
+          );
+
+          return {
+            mode: 'search',
+            query,
+            appliedFilters: null,
+            searchMatchCount: searchMatches.length,
+            searchMatches,
+            resolvedBy,
+            resultCount: resolvedTransfers.length,
+            results: resolvedTransfers,
+            nextAction: resolvedTransfers.length > 0
+              ? (() => {
+                  const sourceChains = uniqueNonEmpty(resolvedTransfers.map((transfer) => transfer.sourceChainSymbol));
+                  if (sourceChains.length > 1) {
+                    return 'Use get_allbridge_transfer with a transferId to open one transfer, or rerun search_allbridge_transfers with a chain filter or from/to direction filters if you want to narrow the history to one network.';
+                  }
+
+                  return 'Use get_allbridge_transfer with a transferId to open one transfer, or follow the historyUrl for progress tracking.';
+                })()
+              : searchMatches.length > 0
+                ? 'The query matched explorer entities, but no transfer records were returned. Try a sender address, recipient address, source transaction hash, messaging transaction hash, receive transaction hash, or transfer ID.'
+                : 'Try a sender address, recipient address, source transaction hash, messaging transaction hash, receive transaction hash, or transfer ID.',
+          };
+        } catch (error) {
+          if (error instanceof AllbridgeExplorerApiError) {
+            throw new UserFacingToolError('validation_error', 'Unable to query the Allbridge explorer.', {
+              query: parsed.query ?? null,
+              limit: parsed.limit,
+              reason: error.message,
+              status: error.status ?? null,
+              details: error.details ?? null,
+            });
+          }
+
+          throw error;
+        }
+      });
+    },
+  );
+
+  server.registerTool(
+    'get_allbridge_transfer',
+    {
+      title: 'Get Allbridge Transfer',
+      description:
+        'Open a single transfer record from the public explorer by transfer ID.',
+      inputSchema: {
+        transferId: requiredTextSchema('Transfer ID to open. Do not pass null.'),
+      },
+    },
+    async (parsed) => {
+      return runTool(async () => {
+        try {
+          const transferId = requireText(parsed.transferId, 'transferId');
+          const response = await explorerClient.getTransfer(transferId);
+          const transfer = normalizeExplorerTransfer(response, config.ALLBRIDGE_EXPLORER_API_BASE_URL, transferId);
+
+          return {
+            transfer,
+            nextAction: 'Use the returned transferId, transaction hashes, and addresses to orient the bridge lifecycle or continue investigation.',
+          };
+        } catch (error) {
+          if (error instanceof AllbridgeExplorerApiError) {
+            throw new UserFacingToolError('validation_error', 'Unable to open the requested Allbridge transfer.', {
+              transferId: parsed.transferId ?? null,
+              reason: error.message,
+              status: error.status ?? null,
+              details: error.details ?? null,
+            });
+          }
+
+          if (error instanceof Error) {
+            throw new UserFacingToolError('validation_error', 'Unable to parse the requested Allbridge transfer.', {
+              transferId: parsed.transferId ?? null,
+              reason: error.message,
+            });
+          }
+
+          throw error;
+        }
+      });
+    },
+  );
+
   registerDevTools(server);
 
   server.registerTool(
@@ -1348,7 +2038,7 @@ export function registerAllbridgeTools(
       title: 'Broadcast Signed Transaction',
       description:
         'Broadcast an already signed transaction for a supported chain family when the matching RPC is configured.',
-      inputSchema: signedTransactionSchema,
+      inputSchema: signedTransactionInputSchema,
     },
     async (parsed) => {
       const result = await dependencies.broadcastSignedTransactionByFamily(parsed as SignedTransaction);

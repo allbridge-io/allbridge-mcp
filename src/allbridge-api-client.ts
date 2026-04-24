@@ -78,6 +78,22 @@ export class AllbridgeApiClient {
     return this.get<TransferStatusResponse>('/transfer/status', params);
   }
 
+  async checkStellarBalanceLine(params: { address: string; token: string }): Promise<unknown> {
+    return this.get<unknown>('/check/stellar/balanceline', params);
+  }
+
+  async checkAlgorandOptIn(params: { sender: string; id: string; type?: 'asset' | 'app' }): Promise<boolean> {
+    return this.get<boolean>('/check/algorand/optin', params);
+  }
+
+  async buildStellarTrustlineTransaction(params: { sender: string; tokenAddress: string; limit?: string }): Promise<string> {
+    return this.get<string>('/raw/stellar/trustline', params);
+  }
+
+  async buildAlgorandOptInTransaction(params: { sender: string; id: string; type?: 'asset' | 'app' }): Promise<unknown> {
+    return this.get<unknown>('/raw/algorand/optin', params);
+  }
+
   private async get<T>(path: string, params: Record<string, string | boolean | undefined>): Promise<T> {
     try {
       const response = await this.http.get<T>(path, {
