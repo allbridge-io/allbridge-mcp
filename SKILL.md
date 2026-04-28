@@ -18,7 +18,7 @@ Do not use it as a wallet signer.
 
 1. Call `plan_bridge_transfer`
 2. Choose the route option
-3. Call `check_bridge_balances`
+3. Call `check_sender_balances`
 4. Only if `canProceed` is true, call `create_bridge_execution_job`
 5. Execute the returned steps with a signer
 6. If needed, call `broadcast_signed_transaction` for a signed step
@@ -27,7 +27,7 @@ Do not use it as a wallet signer.
 ## Rules
 
 - Prefer `plan_bridge_transfer` over directly calling lower-level quote and route tools.
-- Prefer `check_bridge_balances` before `create_bridge_execution_job` and `build_bridge_transactions`.
+- Prefer `check_sender_balances` before `create_bridge_execution_job` and `build_bridge_transactions`.
 - Prefer `create_bridge_execution_job` over manually assembling the raw transaction flow.
 - Treat `build_bridge_transactions` as a lower-level tool for debugging and integration work.
 - Use `broadcast_signed_transaction` only for already signed payloads with a supported `chainFamily`.

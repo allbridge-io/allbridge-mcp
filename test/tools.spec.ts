@@ -292,7 +292,7 @@ describe('registerAllbridgeTools', () => {
       bridgePortalUrl: 'https://core.allbridge.io',
       bridgePortalDeepLink: 'https://core.allbridge.io/?f=ETH&t=SOL&ft=USDC&tt=USDC&send=1&messenger=CCTP',
       nextAction:
-        'Before calling create_bridge_execution_job, ask for the sender address and recipient address, confirm the source and destination token symbols if they were not already pinned, and run check_bridge_balances. Proceed only if canProceed is true.',
+        'Before calling create_bridge_execution_job, ask for the sender address and recipient address, confirm the source and destination token symbols if they were not already pinned, and run check_sender_balances. Proceed only if canProceed is true.',
     });
   });
 
@@ -350,58 +350,6 @@ describe('registerAllbridgeTools', () => {
       amount: '1000000000000000000',
     });
     expect(result.structuredContent).toEqual({
-      balanceValidation: {
-        sourceToken: {
-          symbol: 'YARO',
-          name: 'USD Coin',
-          tokenAddress: '0xyaro-eth',
-          decimals: 18,
-          chainSymbol: 'ETH',
-          chainName: 'Ethereum',
-          chainType: 'EVM',
-        },
-        destinationToken: {
-          symbol: 'YARO',
-          name: 'YARO',
-          tokenAddress: 'yaro-sol',
-          decimals: 9,
-          chainSymbol: 'SOL',
-          chainName: 'Solana',
-          chainType: 'SOLANA',
-        },
-        amount: {
-          amountInBaseUnits: '1000000000000000000',
-          amountInHumanUnits: '1',
-        },
-        messenger: 'ALLBRIDGE',
-        feePaymentMethod: 'WITH_NATIVE_CURRENCY',
-        requiredBalances: [
-          {
-            key: 'token:0xyaro-eth',
-            kind: 'source_token',
-            label: 'YARO balance',
-            chainSymbol: 'ETH',
-            tokenAddress: '0xyaro-eth',
-            requiredBaseUnits: '1000000000000000000',
-            availableBaseUnits: '1000000000000000000',
-            availableHumanUnits: '1',
-            satisfied: true,
-          },
-          {
-            key: 'native:ETH',
-            kind: 'fee_native',
-            label: 'ETH native fee balance',
-            chainSymbol: 'ETH',
-            tokenAddress: null,
-            requiredBaseUnits: '1000',
-            availableBaseUnits: '1000000000000000000',
-            availableHumanUnits: '1',
-            satisfied: true,
-          },
-        ],
-        canProceed: true,
-        nextAction: 'Balances are sufficient. You can call create_bridge_execution_job now.',
-      },
       route: {
         source: {
           symbol: 'YARO',
@@ -692,7 +640,7 @@ describe('registerAllbridgeTools', () => {
     });
   });
 
-  test('check_bridge_balances reports insufficient fee balance without blocking the check tool', async () => {
+  test('check_sender_balances reports insufficient fee balance without blocking the check tool', async () => {
     const sourceToken = createToken({
       symbol: 'USDC',
       tokenAddress: 'sol-usdc',
@@ -737,7 +685,7 @@ describe('registerAllbridgeTools', () => {
       float: '0.000001',
     });
 
-    const result = await server.getHandler('check_bridge_balances')({
+    const result = await server.getHandler('check_sender_balances')({
       sourceTokenAddress: sourceToken.tokenAddress,
       destinationTokenAddress: destinationToken.tokenAddress,
       senderAddress: '4CvAkvPUQyo6RHMXr8KsYnXxMiPtgqoWm3wZHYyNpzY7',
@@ -797,7 +745,7 @@ describe('registerAllbridgeTools', () => {
         },
       ],
       canProceed: false,
-      nextAction: 'Top up the insufficient balance(s) and rerun check_bridge_balances before create_bridge_execution_job.',
+      nextAction: 'Top up the insufficient balance(s) and rerun check_sender_balances before create_bridge_execution_job.',
     });
   });
 
@@ -862,7 +810,7 @@ describe('registerAllbridgeTools', () => {
     expect(result.structuredContent).toMatchObject({
       balanceValidation: {
         canProceed: false,
-        nextAction: 'Top up the insufficient balance(s) and rerun check_bridge_balances before create_bridge_execution_job.',
+        nextAction: 'Top up the insufficient balance(s) and rerun check_sender_balances before create_bridge_execution_job.',
       },
       nextAction: expect.stringContaining('Balance preflight indicates a missing balance or fee requirement'),
     });
@@ -955,7 +903,7 @@ describe('registerAllbridgeTools', () => {
     expect(result.structuredContent.nextAction).toContain(expectedSetup.buildTool);
   });
 
-  test('check_bridge_balances combines source amount and stable fee on the source token', async () => {
+  test('check_sender_balances combines source amount and stable fee on the source token', async () => {
     const sourceToken = createToken({
       symbol: 'USDC',
       tokenAddress: 'sol-usdc',
@@ -1000,7 +948,7 @@ describe('registerAllbridgeTools', () => {
       float: '0.000001',
     });
 
-    const result = await server.getHandler('check_bridge_balances')({
+    const result = await server.getHandler('check_sender_balances')({
       sourceTokenAddress: sourceToken.tokenAddress,
       destinationTokenAddress: destinationToken.tokenAddress,
       senderAddress: '4CvAkvPUQyo6RHMXr8KsYnXxMiPtgqoWm3wZHYyNpzY7',
@@ -1049,53 +997,8 @@ describe('registerAllbridgeTools', () => {
         },
       ],
       canProceed: false,
-      nextAction: 'Top up the insufficient balance(s) and rerun check_bridge_balances before create_bridge_execution_job.',
+      nextAction: 'Top up the insufficient balance(s) and rerun check_sender_balances before create_bridge_execution_job.',
     });
-  });
-
-  test('search_allbridge_documentation returns snippets from the developer assistant guide', async () => {
-    const result = await server.getHandler('search_allbridge_documentation')({
-      query: 'developer assistant',
-      limit: 3,
-    });
-
-    expect(result.structuredContent.query).toBe('developer assistant');
-    expect(result.structuredContent.resultCount).toBeGreaterThan(0);
-    expect((result.structuredContent.results as Array<Record<string, unknown>>).some((resource) => resource.name === 'developer-assistant')).toBe(true);
-  });
-
-  test('list_available_coding_resources and get_coding_resource_details return dev references', async () => {
-    const listResult = await server.getHandler('list_available_coding_resources')({
-      product: 'dev',
-    });
-
-    expect((listResult.structuredContent.resources as Array<Record<string, unknown>>).map((resource) => resource.name)).toEqual(
-      expect.arrayContaining(['docs-core-home', 'sdk-get-started', 'rest-api-readme', 'claude-code-example']),
-    );
-    expect((listResult.structuredContent.resources as Array<Record<string, unknown>>).every((resource) => resource.collection)).toBe(true);
-
-    const detailsResult = await server.getHandler('get_coding_resource_details')({
-      product: 'dev',
-      collection: 'rest-api-integration',
-      resource_names: ['developer-assistant'],
-    });
-
-    expect((detailsResult.structuredContent.resources as Array<Record<string, unknown>>)[0]).toMatchObject({
-      name: 'developer-assistant',
-    });
-    expect(String((detailsResult.structuredContent.resources as Array<Record<string, unknown>>)[0].content)).toContain('Tool Flow');
-  });
-
-  test('list_available_coding_resources can scope dev docs by collection', async () => {
-    const result = await server.getHandler('list_available_coding_resources')({
-      product: 'dev',
-      collection: 'project-docs',
-    });
-
-    const resources = result.structuredContent.resources as Array<Record<string, unknown>>;
-    expect(resources.length).toBeGreaterThan(0);
-    expect(resources.every((resource) => resource.collection === 'project-docs')).toBe(true);
-    expect((result.structuredContent.collection as string)).toBe('project-docs');
   });
 
   test('create_bridge_execution_job returns ordered signing steps and tracking metadata', async () => {
@@ -1152,12 +1055,12 @@ describe('registerAllbridgeTools', () => {
       bridgePortalUrl: 'https://core.allbridge.io',
       bridgePortalDeepLink: 'https://core.allbridge.io/?f=ETH&t=SOL&ft=YARO&tt=YARO&send=1&messenger=ALLBRIDGE',
       balanceValidation: {
-        sourceToken: {
-          symbol: 'YARO',
-          name: 'USD Coin',
-          tokenAddress: '0xyaro-eth',
-          decimals: 18,
-          chainSymbol: 'ETH',
+      sourceToken: {
+        symbol: 'YARO',
+        name: 'YARO',
+        tokenAddress: '0xyaro-eth',
+        decimals: 18,
+        chainSymbol: 'ETH',
           chainName: 'Ethereum',
           chainType: 'EVM',
         },
@@ -1712,7 +1615,7 @@ describe('registerAllbridgeTools', () => {
           receiveTxId: '0xreceive',
           amount: '15551.476689',
           status: 'complete',
-          createdAt: '2026-04-23T12:00:00Z',
+          createdAt: '1776637313000',
           historyUrl: 'https://core.allbridge.io/history/SOL/0xsource',
           explorerUrl: 'https://explorer.api.allbridgecoreapi.net/transfers/0xde477a5db37e3cfeb35aaa7c3f68da3dfe5c5034966d19c89c5a7b10c981e76d',
         },
@@ -1803,6 +1706,20 @@ describe('registerAllbridgeTools', () => {
   });
 
   test('search_allbridge_transfers lists transfers by direction filters', async () => {
+    client.getTokens.mockResolvedValue([
+      createToken({
+        symbol: 'USDC',
+        chainSymbol: 'SOL',
+        chainName: 'Solana',
+        chainType: 'SOLANA',
+      }),
+      createToken({
+        symbol: 'USDC',
+        chainSymbol: 'ARB',
+        chainName: 'Arbitrum',
+        chainType: 'EVM',
+      }),
+    ]);
     explorerClient.listTransfers.mockResolvedValue({
       items: [
         {

@@ -32,7 +32,6 @@ import {
   validateAddressForChainType,
 } from './chain-catalog.js';
 import { broadcastSignedTransactionByFamily } from './chain-broadcast.js';
-import { registerDevTools } from './dev-tools.js';
 import { createToolErrorResult, UserFacingToolError } from './tool-errors.js';
 import type { SignedTransaction } from './transaction-types.js';
 import type { TokenWithChainDetails } from './types.js';
@@ -514,7 +513,7 @@ function summarizePlan(
     recommendedOption,
     options,
     nextAction:
-      'Before calling create_bridge_execution_job, ask for the sender address and recipient address, confirm the source and destination token symbols if they were not already pinned, and run check_bridge_balances. Proceed only if canProceed is true.',
+      'Before calling create_bridge_execution_job, ask for the sender address and recipient address, confirm the source and destination token symbols if they were not already pinned, and run check_sender_balances. Proceed only if canProceed is true.',
   };
 }
 
@@ -743,13 +742,19 @@ function buildExplorerTransferListParams(
     });
   }
 
+  if (params.page !== undefined && params.page !== null && typeof params.page !== 'number') {
+    throw new UserFacingToolError('validation_error', "Parameter 'page' must be a number.", {
+      page: params.page,
+    });
+  }
+
   const resolvedChain = chain ? resolveChainFromCatalog(catalog!, chain, 'chain').chainSymbol : undefined;
   const resolvedFrom = from ? resolveChainFromCatalog(catalog!, from, 'from').chainSymbol : undefined;
   const resolvedTo = to ? resolveChainFromCatalog(catalog!, to, 'to').chainSymbol : undefined;
   const minFromAmount = typeof params.minFromAmount === 'number' ? params.minFromAmount : undefined;
   const maxFromAmount = typeof params.maxFromAmount === 'number' ? params.maxFromAmount : undefined;
   const status = normalizeExplorerStatus(params.status);
-  const page = typeof params.page === 'number' ? params.page : undefined;
+  const page = typeof params.page === 'number' ? params.page : 1;
   const limit = typeof params.limit === 'number' ? params.limit : undefined;
   const account = optionalTextValue(params.account);
 
@@ -1167,7 +1172,7 @@ export function registerAllbridgeTools(
     const canProceed = checks.every((check) => check.satisfied === true);
     const nextAction = canProceed
       ? 'Balances are sufficient. You can call create_bridge_execution_job now.'
-      : 'Top up the insufficient balance(s) and rerun check_bridge_balances before create_bridge_execution_job.';
+      : 'Top up the insufficient balance(s) and rerun check_sender_balances before create_bridge_execution_job.';
 
       const result: BridgeBalanceValidation = {
         sourceToken: summarizeToken(args.sourceToken),
@@ -1499,11 +1504,11 @@ export function registerAllbridgeTools(
   );
 
   server.registerTool(
-    'check_bridge_balances',
+    'check_sender_balances',
     {
-      title: 'Check Bridge Balances',
+      title: 'Check Sender Balances',
       description:
-        'Check whether the sender has enough source token balance and relayer fee balance to execute a bridge before building transactions. Use this before create_bridge_execution_job when the sender wallet is known.',
+        'Sender balance preflight before building bridge transactions. Check whether the sender has enough source token balance and relayer fee balance to execute a bridge. Use this before create_bridge_execution_job when the sender wallet is known.',
       inputSchema: {
         sourceTokenAddress: requiredTextSchema('Source token address. Do not pass null.'),
         destinationTokenAddress: requiredTextSchema('Destination token address. Do not pass null.'),
@@ -1639,7 +1644,17 @@ export function registerAllbridgeTools(
           approvalTx: built.approvalTx,
           bridgeTx: built.bridgeTx,
           destinationSetup: built.destinationSetup,
-          nextAction: `${built.approvalRequired ? 'Send the approval transaction to the signer or broadcaster first, then send the bridge transaction.' : 'Send the returned bridge transaction to the signer or broadcaster.'}${built.destinationSetup?.required ? ` The destination account at ${built.destinationSetup.accountAddress} still needs a prerequisite transaction before it can receive the bridged asset. Use ${built.destinationSetup.checkTool} to confirm and ${built.destinationSetup.buildTool} to build it if needed.` : ''}`,
+          nextAction: [
+            built.balanceValidation.canProceed
+              ? null
+              : 'Balance preflight indicates a missing balance or fee requirement, but the bridge transaction was still built so you can inspect it or top up before signing.',
+            built.approvalRequired
+              ? 'Send the approval transaction to the signer or broadcaster first, then send the bridge transaction.'
+              : 'Send the returned bridge transaction to the signer or broadcaster.',
+            built.destinationSetup?.required
+              ? `The destination account at ${built.destinationSetup.accountAddress} still needs a prerequisite transaction before it can receive the bridged asset. Use ${built.destinationSetup.checkTool} to confirm and ${built.destinationSetup.buildTool} to build it if needed.`
+              : null,
+          ].filter((part): part is string => Boolean(part)).join(' '),
         };
       });
     },
@@ -1908,6 +1923,20 @@ export function registerAllbridgeTools(
           }
 
           if (!query) {
+            const chain = optionalText(parsed.chain);
+            const from = optionalText(parsed.from);
+            const to = optionalText(parsed.to);
+
+            if (chain && (from || to)) {
+              throw new UserFacingToolError('validation_error', "Parameter 'chain' cannot be combined with 'from' or 'to'.", {
+                chain: parsed.chain ?? null,
+                from: parsed.from ?? null,
+                to: parsed.to ?? null,
+              });
+            }
+          }
+
+          if (!query) {
             const needsCatalog = Boolean(optionalText(parsed.chain) || optionalText(parsed.from) || optionalText(parsed.to));
             const catalog = needsCatalog ? await loadChainCatalog(client) : undefined;
             const listParams = buildExplorerTransferListParams(parsed, catalog);
@@ -2029,8 +2058,6 @@ export function registerAllbridgeTools(
       });
     },
   );
-
-  registerDevTools(server);
 
   server.registerTool(
     'broadcast_signed_transaction',

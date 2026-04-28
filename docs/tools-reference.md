@@ -13,7 +13,7 @@ Every tool in `allbridge-mcp` returns a structured envelope. On success it carri
 }
 ```
 
-Tools are grouped by responsibility: Bridge, Destination prerequisites, Broadcast, Developer assistant.
+Tools are grouped by responsibility: Bridge, Destination prerequisites, Broadcast.
 
 ## Bridge
 
@@ -70,7 +70,7 @@ Returns:
 - quote options
 - `bridgePortalName`, `bridgePortalUrl`, `bridgePortalDeepLink`
 
-### `check_bridge_balances`
+### `check_sender_balances`
 
 Preflight for the sender wallet. Never broadcasts anything. Called implicitly by `create_bridge_execution_job` and `build_bridge_transactions`.
 
@@ -122,7 +122,7 @@ Lower-level transaction builder. Use it when you want raw approval and bridge tr
 
 Returns raw approval and bridge transactions, transaction shape hints, approval requirement metadata, the same `destinationSetup` hints as the job tool, and the balance validation summary used to build them.
 
-Balance validation is advisory in this tool. If you want a hard preflight before signing, call `check_bridge_balances` first and inspect `canProceed`.
+Balance validation is advisory in this tool. If you want a hard preflight before signing, call `check_sender_balances` first and inspect `canProceed`.
 
 ### `get_transfer_status`
 
@@ -204,27 +204,3 @@ RPC resolution (EVM):
 For non-EVM families, set the matching `ALLBRIDGE_<FAMILY>_RPC_URL` variable.
 
 Include `walletId` on the signed payload when more than one wallet exists for the family so the broadcast layer can pick deterministically.
-
-## Developer Assistant
-
-These tools give the agent read-only access to project documentation, SDK references, REST API integration notes, and worked examples. They never touch blockchain state.
-
-### `search_allbridge_documentation`
-
-Ranked snippet search across the allowlisted documentation scopes: project docs, SDK integration, REST API integration, and examples.
-
-### `get_allbridge_product_summary`
-
-Inputs: `group` in `"bridge"`, `"dev"`, or `"broadcast"`.
-
-Returns the group summary, capabilities, boundaries, and recommended tools.
-
-### `list_available_coding_resources`
-
-Lists docs and code references scoped to a selected group.
-
-### `get_coding_resource_details`
-
-Returns full content for one or more listed resources.
-
-See [`developer-assistant.md`](./developer-assistant.md) for usage patterns.

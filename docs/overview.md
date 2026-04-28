@@ -24,7 +24,6 @@ A client can use `allbridge-mcp` alone if the signing layer lives elsewhere (rem
 - broadcast payloads that are already signed
 - track transfer status by source-chain transaction hash
 - resolve past transfers from the public explorer
-- answer documentation and integration questions via the developer-assistant tools
 
 `allbridge-mcp` cannot:
 

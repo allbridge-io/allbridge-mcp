@@ -55,7 +55,7 @@ Before building anything, validate that the sender can cover the move:
 
 ```json
 {
-  "name": "check_bridge_balances",
+  "name": "check_sender_balances",
   "arguments": {
     "sourceTokenAddress": "0xsource",
     "destinationTokenAddress": "0xdestination",

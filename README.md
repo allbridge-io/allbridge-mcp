@@ -24,14 +24,13 @@ See the signer repo README for the full variable matrix and client-specific reci
 - Broadcasts already-signed transactions for supported chain families
 - Tracks transfer status from the source-chain transaction hash
 - Searches public explorer records by transfer hash or address
-- Helps agents find integration docs, SDK references, and examples
 - Provides Stellar trustline and Algorand opt-in helpers for destination prerequisites
 
 ## Capability Boundary
 
 `allbridge-mcp` does not sign transactions, does not hold private keys, and cannot choose a local wallet on its own. For signing, pair it with [`local-signer-mcp`](https://github.com/allbridge-io/local-signer-mcp), which owns the local wallet surface.
 
-If the sender's balance is unknown, call `check_bridge_balances` before `create_bridge_execution_job`. The tool returns the available balance, the required balance, and a `canProceed` flag, but it does not have to block job construction.
+If the sender's balance is unknown, call `check_sender_balances` before `create_bridge_execution_job` for bridge-specific fee validation. `check_sender_balances` returns the available balance, the required balance, and a `canProceed` flag, but it does not have to block job construction.
 
 ## Requirements
 
@@ -97,10 +96,9 @@ Full client recipes in [`examples/`](./examples).
 
 Grouped surfaces exposed by the server. Each tool returns structured errors (`ok`, `error.code`, `error.message`, `error.details`) so agents can recover without guessing.
 
-- **Bridge:** `plan_bridge_transfer`, `list_supported_chains`, `list_supported_tokens`, `find_bridge_routes`, `quote_bridge_transfer`, `check_bridge_balances`, `create_bridge_execution_job`, `build_bridge_transactions`, `get_transfer_status`, `search_allbridge_transfers`, `get_allbridge_transfer`
+- **Bridge:** `plan_bridge_transfer`, `list_supported_chains`, `list_supported_tokens`, `find_bridge_routes`, `quote_bridge_transfer`, `check_sender_balances`, `create_bridge_execution_job`, `build_bridge_transactions`, `get_transfer_status`, `search_allbridge_transfers`, `get_allbridge_transfer`
 - **Destination prerequisites:** `check_stellar_trustline`, `build_stellar_trustline_transaction`, `check_algorand_optin`, `build_algorand_optin_transaction`
 - **Broadcast:** `broadcast_signed_transaction`
-- **Dev assistant:** `search_allbridge_documentation`, `get_allbridge_product_summary`, `list_available_coding_resources`, `get_coding_resource_details`
 
 End-to-end walkthrough for every tool: [`docs/usage.md`](./docs/usage.md). Live input/output schemas: `pnpm inspect`.
 

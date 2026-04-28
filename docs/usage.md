@@ -37,7 +37,7 @@ Response carries a normalized amount, source/destination token details, messenge
 
 ```json
 {
-  "name": "check_bridge_balances",
+  "name": "check_sender_balances",
   "arguments": {
     "sourceTokenAddress": "0xA0b8...eB48",
     "destinationTokenAddress": "EPj...Dt1v",
@@ -51,7 +51,7 @@ Response carries a normalized amount, source/destination token details, messenge
 }
 ```
 
-Treat `check_bridge_balances` as a preflight, not a hard stop for the rest of the flow. If `canProceed` is `false`, the response still tells you exactly which balance is short so the agent can warn the user or continue with job construction if that is the intended behavior.
+Treat `check_sender_balances` as a preflight, not a hard stop for the rest of the flow. If `canProceed` is `false`, the response still tells you exactly which balance is short so the agent can warn the user or continue with job construction if that is the intended behavior.
 
 ## 3. Build the execution job
 
@@ -187,12 +187,10 @@ Common codes: `invalid_chain`, `invalid_token`, `insufficient_balance`, `route_n
 
 ## Tool catalogue
 
-**Bridge flow.** `plan_bridge_transfer`, `list_supported_chains`, `list_supported_tokens`, `find_bridge_routes`, `quote_bridge_transfer`, `check_bridge_balances`, `create_bridge_execution_job`, `build_bridge_transactions`, `get_transfer_status`, `search_allbridge_transfers`, `get_allbridge_transfer`.
+**Bridge flow.** `plan_bridge_transfer`, `list_supported_chains`, `list_supported_tokens`, `find_bridge_routes`, `quote_bridge_transfer`, `check_sender_balances`, `create_bridge_execution_job`, `build_bridge_transactions`, `get_transfer_status`, `search_allbridge_transfers`, `get_allbridge_transfer`.
 
 **Destination prerequisites.** `check_stellar_trustline`, `build_stellar_trustline_transaction`, `check_algorand_optin`, `build_algorand_optin_transaction`.
 
 **Broadcast.** `broadcast_signed_transaction`.
-
-**Developer assistant.** `search_allbridge_documentation`, `get_allbridge_product_summary`, `list_available_coding_resources`, `get_coding_resource_details`.
 
 Run `pnpm inspect` to see the live input/output schema for each tool.
