@@ -49,6 +49,8 @@ The response includes:
 
 If the user or agent needs to compare routes directly, `find_bridge_routes` and `quote_bridge_transfer` expose lower-level slices.
 
+If a chain has multiple tokens with the same symbol, pass the exact token address in the planning call so the route uses the intended contract.
+
 ### 3. Preflight balances
 
 Before building anything, validate that the sender can cover the move:

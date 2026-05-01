@@ -33,6 +33,8 @@ Steps 1, 2, 3, and 5 are this server. Step 4 is the signer.
 
 Response carries a normalized amount, source/destination token details, messenger options, a recommended option, `bridgePortalUrl`, and a `nextAction` hint. If you don't know the symbols yet, call `list_supported_chains` and `list_supported_tokens` first. For a direct route comparison or a cheaper slice, use `find_bridge_routes` or `quote_bridge_transfer`.
 
+If a chain exposes more than one token with the same symbol, provide the exact token address on the planning call so the server does not have to guess between contracts.
+
 ## 2. Preflight balances
 
 ```json

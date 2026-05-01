@@ -85,7 +85,7 @@ Returns:
 - `canProceed`
 - `nextAction`
 
-The `requiredBalances` list shows the actual available balance, the required amount, and whether each requirement is satisfied.
+The `requiredBalances` list shows the balance returned by the API, the required amount, and whether each requirement is satisfied. The tool compares balances in base units internally, but the reported `availableHumanUnits` value keeps the API's human-readable token balance.
 
 ### `create_bridge_execution_job`
 

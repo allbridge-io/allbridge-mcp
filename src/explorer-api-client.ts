@@ -1,5 +1,7 @@
 import axios, { AxiosError, type AxiosInstance } from 'axios';
 
+import { ALLBRIDGE_MCP_CLIENT_HEADERS } from './http-headers.js';
+
 type RecordLike = Record<string, unknown>;
 
 export class AllbridgeExplorerApiError extends Error {
@@ -448,6 +450,7 @@ export class AllbridgeExplorerApiClient {
     this.http = axios.create({
       baseURL,
       timeout,
+      headers: ALLBRIDGE_MCP_CLIENT_HEADERS,
     });
   }
 

@@ -6,6 +6,7 @@ import type {
   TokenWithChainDetails,
   TransferStatusResponse,
 } from './types.js';
+import { ALLBRIDGE_MCP_CLIENT_HEADERS } from './http-headers.js';
 
 export class AllbridgeApiError extends Error {
   constructor(
@@ -25,6 +26,7 @@ export class AllbridgeApiClient {
     this.http = axios.create({
       baseURL,
       timeout,
+      headers: ALLBRIDGE_MCP_CLIENT_HEADERS,
     });
   }
 

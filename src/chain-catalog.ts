@@ -214,7 +214,22 @@ export function resolveTokenForChain(
   }
 
   const normalizedSymbol = normalizeSymbol(tokenSymbol);
-  const token = chain.tokens.find((candidate) => normalizeSymbol(candidate.symbol) === normalizedSymbol);
+  const matchingTokens = chain.tokens.filter((candidate) => normalizeSymbol(candidate.symbol) === normalizedSymbol);
+
+  if (matchingTokens.length > 1) {
+    throw new UserFacingToolError('ambiguous_token', `Token ${tokenSymbol} is ambiguous on ${chain.chainSymbol}.`, {
+      field: fieldNames.tokenSymbol,
+      chainSymbol: chain.chainSymbol,
+      chainName: chain.chainName,
+      tokenType,
+      tokenSymbol: tokenSymbol.trim(),
+      matchingTokens: summarizeSupportedTokens(matchingTokens),
+      supportedTokens: summarizeSupportedTokens(chain.tokens),
+      nextAction: 'Use the exact token address to disambiguate this token on the selected chain.',
+    });
+  }
+
+  const token = matchingTokens[0];
 
   if (!token) {
     throw new UserFacingToolError('unsupported_token', `Token ${tokenSymbol} is not available on ${chain.chainSymbol}.`, {

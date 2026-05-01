@@ -2,6 +2,7 @@ export type ToolErrorCode =
   | 'missing_input'
   | 'unsupported_chain'
   | 'unsupported_token'
+  | 'ambiguous_token'
   | 'invalid_amount'
   | 'invalid_address'
   | 'unsupported_route'

@@ -1,39 +1,48 @@
 # Allbridge Bridge Flow
 
-Use this MCP server for bridge orchestration, not for signing.
+Use this MCP server for bridge planning and execution only. Do not use it for docs consulting or signing setup guidance when the question is about the repository, SDK, or integration examples; use `allbridge-dev-mcp` for that.
 
-## When To Use
+## Use This Server When
 
 Use `allbridge-mcp` when the task is to:
 
 - discover bridgeable routes
 - evaluate quote options
-- validate sender and fee balances before execution
-- build an execution job
-- track a bridge transfer
+- validate sender balances before execution
+- build an execution job or raw bridge transactions
+- handle destination prerequisites such as Stellar trustlines or Algorand opt-ins
+- track bridge transfers
+- inspect past transfer history through the explorer
 
 Do not use it as a wallet signer.
 
 ## Default Workflow
 
-1. Call `plan_bridge_transfer`
-2. Choose the route option
-3. Call `check_sender_balances`
-4. Only if `canProceed` is true, call `create_bridge_execution_job`
-5. Execute the returned steps with a signer
-6. If needed, call `broadcast_signed_transaction` for a signed step
-7. Call `get_transfer_status` until the transfer resolves
+1. Call `plan_bridge_transfer`.
+2. If the token symbol is ambiguous on the chain, supply the exact token address before planning again.
+3. Review the suggested route and messenger.
+4. Call `check_sender_balances` as a sender balance preflight.
+5. If the preflight says balances are short, warn the user. Do not treat that response as a hard stop unless the user wants you to stop.
+6. Call `create_bridge_execution_job` for the normal execution path.
+7. Use `build_bridge_transactions` only when you need the lower-level raw transaction flow.
+8. Hand each step to `local-signer-mcp` or another signer that can return a signed payload.
+9. Use `broadcast_signed_transaction` only for payloads that are already signed.
+10. Call `get_transfer_status` until the transfer reaches the receive side or another terminal state.
 
 ## Rules
 
 - Prefer `plan_bridge_transfer` over directly calling lower-level quote and route tools.
 - Prefer `check_sender_balances` before `create_bridge_execution_job` and `build_bridge_transactions`.
+- Treat `check_sender_balances` as advisory preflight, not a hard blocker.
 - Prefer `create_bridge_execution_job` over manually assembling the raw transaction flow.
-- Treat `build_bridge_transactions` as a lower-level tool for debugging and integration work.
+- Treat `build_bridge_transactions` as a lower-level tool for debugging and custom integration work.
 - Use `broadcast_signed_transaction` only for already signed payloads with a supported `chainFamily`.
 - Do not assume a single-step flow. Approval and bridge can be separate steps.
 - Do not assume bridge execution is EVM-only. The source chain family can be EVM, Solana, Tron, Algorand, Stacks, Soroban/Stellar, or Sui, and the returned handoff reflects that family.
-- Do not mark a transfer complete until `get_transfer_status` shows the receive side or other terminal transfer state.
+- For destination chains that need account setup, use `check_stellar_trustline` / `build_stellar_trustline_transaction` or `check_algorand_optin` / `build_algorand_optin_transaction` before the main bridge step when `destinationSetup.required` is true.
+- Do not mark a transfer complete until `get_transfer_status` shows the receive side or another terminal transfer state.
+- Use `search_allbridge_transfers` for account history, transfer search, and explorer filtering.
+- Use `get_allbridge_transfer` when the transfer ID is already known.
 - When more than one wallet exists for a family, include `walletId` on the signed payload so the correct wallet can be selected deterministically.
 - For EVM, resolve broadcast RPC by `walletId` first when present, then by `chainSymbol`, then `chainId`, then the default RPC env var.
 
@@ -67,3 +76,4 @@ The normal output of this MCP is one of:
 - an execution job
 - a broadcast result for a signed transaction
 - a transfer status payload
+- an explorer transfer record or filtered transfer list

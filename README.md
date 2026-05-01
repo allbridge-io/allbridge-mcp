@@ -15,6 +15,8 @@ If the bridge flow will be signed locally, configure `local-signer-mcp` first:
 
 See the signer repo README for the full variable matrix and client-specific recipes.
 
+Outbound REST API and explorer requests from `allbridge-mcp` include `X-Allbridge-Client: allbridge-mcp` so the backend can identify MCP traffic in logs and metrics.
+
 ## What It Does
 
 - Discovers routes, tokens, and chains

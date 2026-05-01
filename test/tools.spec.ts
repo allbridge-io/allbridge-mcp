@@ -110,7 +110,7 @@ describe('registerAllbridgeTools', () => {
         },
       ],
     });
-    client.getTokenBalance.mockResolvedValue({ result: '1000000000000000000' });
+    client.getTokenBalance.mockResolvedValue({ result: '1' });
     client.getTokenNativeBalance.mockResolvedValue({
       int: '1000000000000000000',
       float: '1',
@@ -679,7 +679,7 @@ describe('registerAllbridgeTools', () => {
         },
       ],
     });
-    client.getTokenBalance.mockResolvedValue({ result: '1000000' });
+    client.getTokenBalance.mockResolvedValue({ result: '1' });
     client.getTokenNativeBalance.mockResolvedValue({
       int: '1000',
       float: '0.000001',
@@ -749,6 +749,74 @@ describe('registerAllbridgeTools', () => {
     });
   });
 
+  test('check_sender_balances preserves the human token balance returned by the API', async () => {
+    const sourceToken = createToken({
+      symbol: 'USDT',
+      tokenAddress: '0xpolygon-usdt',
+      chainSymbol: 'POL',
+      chainName: 'Polygon',
+      chainType: 'EVM',
+    });
+    const destinationToken = createToken({
+      symbol: 'USDT',
+      tokenAddress: '0xarbitrum-usdt',
+      chainSymbol: 'ARB',
+      chainName: 'Arbitrum',
+      chainType: 'EVM',
+    });
+
+    client.getTokens.mockResolvedValue([sourceToken, destinationToken]);
+    client.getBridgeQuote.mockResolvedValue({
+      amountInt: '100000',
+      amountFloat: '0.1',
+      sourceTokenAddress: sourceToken.tokenAddress,
+      destinationTokenAddress: destinationToken.tokenAddress,
+      options: [
+        {
+          messenger: 'ALLBRIDGE',
+          estimatedTimeMs: 120000,
+          paymentMethods: [
+            {
+              feePaymentMethod: 'WITH_NATIVE_CURRENCY',
+              fee: '1000',
+              estimatedAmount: {
+                min: '100000',
+                max: '100000',
+              },
+            },
+          ],
+        },
+      ],
+    });
+    client.getTokenBalance.mockResolvedValue({ result: '0.9' });
+    client.getTokenNativeBalance.mockResolvedValue({
+      int: '1000',
+      float: '0.000001',
+    });
+
+    const result = await server.getHandler('check_sender_balances')({
+      sourceTokenAddress: sourceToken.tokenAddress,
+      destinationTokenAddress: destinationToken.tokenAddress,
+      senderAddress: '0x1111111111111111111111111111111111111111',
+      amount: '0.1',
+      amountUnit: 'human',
+      messenger: 'ALLBRIDGE',
+      feePaymentMethod: 'WITH_NATIVE_CURRENCY',
+    });
+
+    expect(result.structuredContent).toMatchObject({
+      canProceed: true,
+      requiredBalances: [
+        {
+          key: 'token:0xpolygon-usdt',
+          availableBaseUnits: '900000',
+          availableHumanUnits: '0.9',
+          satisfied: true,
+        },
+      ],
+    });
+  });
+
   test('build_bridge_transactions returns advisory balance validation when balances are insufficient', async () => {
     const sourceToken = createToken({
       symbol: 'USDC',
@@ -788,7 +856,7 @@ describe('registerAllbridgeTools', () => {
         },
       ],
     });
-    client.getTokenBalance.mockResolvedValue({ result: '1000000' });
+    client.getTokenBalance.mockResolvedValue({ result: '0.5' });
     client.getTokenNativeBalance.mockResolvedValue({
       int: '1000',
       float: '0.000001',
@@ -942,7 +1010,7 @@ describe('registerAllbridgeTools', () => {
         },
       ],
     });
-    client.getTokenBalance.mockResolvedValue({ result: '500000' });
+    client.getTokenBalance.mockResolvedValue({ result: '0.5' });
     client.getTokenNativeBalance.mockResolvedValue({
       int: '1000',
       float: '0.000001',
@@ -2105,8 +2173,134 @@ describe('registerAllbridgeTools', () => {
         details: {
           field: 'sourceTokenSymbol',
         },
+      },
+    });
+  });
+
+  test('plan_bridge_transfer fails on ambiguous source symbols unless an exact token address is provided', async () => {
+    client.getTokens.mockResolvedValue([
+      createToken({
+        symbol: 'USDT',
+        tokenAddress: '0xpolygon-usdt-a',
+        chainSymbol: 'POL',
+        chainName: 'Polygon',
+        chainType: 'EVM',
+      }),
+      createToken({
+        symbol: 'USDT',
+        tokenAddress: '0xpolygon-usdt-b',
+        chainSymbol: 'POL',
+        chainName: 'Polygon',
+        chainType: 'EVM',
+      }),
+      createToken({
+        symbol: 'USDC',
+        tokenAddress: '0xpolygon-usdc',
+        chainSymbol: 'POL',
+        chainName: 'Polygon',
+        chainType: 'EVM',
+      }),
+    ]);
+
+    const result = await server.getHandler('plan_bridge_transfer')({
+      sourceChain: 'Polygon',
+      destinationChain: 'Polygon',
+      amount: '1',
+      amountUnit: 'human',
+      tokenType: 'swap',
+      sourceTokenSymbol: 'USDT',
+      destinationTokenSymbol: 'USDC',
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.structuredContent).toMatchObject({
+      ok: false,
+      error: {
+        code: 'ambiguous_token',
+        message: 'Token USDT is ambiguous on POL.',
+        details: {
+          field: 'sourceTokenSymbol',
+          chainSymbol: 'POL',
+          tokenSymbol: 'USDT',
+          nextAction: 'Use the exact token address to disambiguate this token on the selected chain.',
         },
-      });
+      },
+    });
+  });
+
+  test('plan_bridge_transfer uses an explicit token address when the source symbol is ambiguous', async () => {
+    const preferredToken = createToken({
+      symbol: 'USDT',
+      tokenAddress: '0xpolygon-usdt-a',
+      chainSymbol: 'POL',
+      chainName: 'Polygon',
+      chainType: 'EVM',
+    });
+
+    client.getTokens.mockResolvedValue([
+      preferredToken,
+      createToken({
+        symbol: 'USDT',
+        tokenAddress: '0xpolygon-usdt-b',
+        chainSymbol: 'POL',
+        chainName: 'Polygon',
+        chainType: 'EVM',
+      }),
+      createToken({
+        symbol: 'USDC',
+        tokenAddress: '0xpolygon-usdc',
+        chainSymbol: 'POL',
+        chainName: 'Polygon',
+        chainType: 'EVM',
+      }),
+    ]);
+    client.getBridgeQuote.mockResolvedValue({
+      amountInt: '1000000',
+      amountFloat: '1',
+      sourceTokenAddress: preferredToken.tokenAddress,
+      destinationTokenAddress: '0xpolygon-usdc',
+      options: [
+        {
+          messenger: 'ALLBRIDGE',
+          estimatedTimeMs: 120000,
+          paymentMethods: [
+            {
+              feePaymentMethod: 'WITH_NATIVE_CURRENCY',
+              fee: '1000',
+              estimatedAmount: {
+                min: '1000000',
+                max: '1000000',
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    const result = await server.getHandler('plan_bridge_transfer')({
+      sourceChain: 'Polygon',
+      destinationChain: 'Polygon',
+      amount: '1',
+      amountUnit: 'human',
+      tokenType: 'swap',
+      sourceTokenSymbol: 'USDT',
+      sourceTokenAddress: preferredToken.tokenAddress,
+      destinationTokenSymbol: 'USDC',
+    });
+
+    expect(result.isError).not.toBe(true);
+    expect(client.getBridgeQuote).toHaveBeenCalledWith({
+      sourceToken: preferredToken.tokenAddress,
+      destinationToken: '0xpolygon-usdc',
+      amount: '1000000',
+    });
+    expect(result.structuredContent).toMatchObject({
+      route: {
+        source: {
+          tokenAddress: preferredToken.tokenAddress,
+        },
+      },
+    });
   });
 
   test('find_bridge_routes reports symbol field names for destination token lookup errors', async () => {

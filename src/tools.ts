@@ -1012,6 +1012,7 @@ export function registerAllbridgeTools(
     label: string;
     chainSymbol: string;
     tokenAddress: string | null;
+    tokenDecimals: number | null;
     requiredBaseUnits: string;
     availableBaseUnits: string | null;
     availableHumanUnits: string | null;
@@ -1076,6 +1077,7 @@ export function registerAllbridgeTools(
           : `${args.sourceToken.symbol} balance`,
         chainSymbol: args.sourceToken.chainSymbol,
         tokenAddress: sourceTokenIsNative ? null : args.sourceToken.tokenAddress,
+        tokenDecimals: sourceTokenIsNative ? null : args.sourceToken.decimals,
         requiredBaseUnits: args.amount.amountInBaseUnits,
         availableBaseUnits: null,
         availableHumanUnits: null,
@@ -1103,6 +1105,7 @@ export function registerAllbridgeTools(
             label: `${args.sourceToken.chainSymbol} native fee balance`,
             chainSymbol: args.sourceToken.chainSymbol,
             tokenAddress: null,
+            tokenDecimals: null,
             requiredBaseUnits: relayerFeeBaseUnits,
             availableBaseUnits: null,
             availableHumanUnits: null,
@@ -1118,6 +1121,7 @@ export function registerAllbridgeTools(
             feePaymentMethod: args.feePaymentMethod,
           });
         }
+        const abrToken = resolveTokenByAddressFromCatalog(catalog, abrTokenAddress, 'abrTokenAddress');
 
         const abrFeeKey = `abr:${abrTokenAddress.toLowerCase()}`;
         requirements.set(abrFeeKey, {
@@ -1126,6 +1130,7 @@ export function registerAllbridgeTools(
           label: `${args.sourceToken.chainSymbol} ABR fee balance`,
           chainSymbol: args.sourceToken.chainSymbol,
           tokenAddress: abrTokenAddress,
+          tokenDecimals: abrToken.decimals,
           requiredBaseUnits: relayerFeeBaseUnits,
           availableBaseUnits: null,
           availableHumanUnits: null,
@@ -1158,14 +1163,18 @@ export function registerAllbridgeTools(
           address: args.senderAddress,
           token: requirement.tokenAddress,
         });
-        const availableHumanUnits = requirement.kind === 'fee_abr'
-          ? null
-          : baseUnitsToDecimal(balance.result, args.sourceToken.decimals);
+        if (requirement.tokenDecimals === null) {
+          throw new UserFacingToolError('validation_error', 'Unable to determine token decimals for balance validation.', {
+            requirement,
+          });
+        }
+        const availableHumanUnits = balance.result.trim();
+        const availableBaseUnits = decimalToBaseUnits(availableHumanUnits, requirement.tokenDecimals);
         return {
           ...requirement,
-          availableBaseUnits: balance.result,
+          availableBaseUnits,
           availableHumanUnits,
-          satisfied: compareBaseUnits(balance.result, requirement.requiredBaseUnits),
+          satisfied: compareBaseUnits(availableBaseUnits, requirement.requiredBaseUnits),
         };
       }));
 
@@ -1299,7 +1308,7 @@ export function registerAllbridgeTools(
     {
       title: 'Plan Stablecoin Bridge Transfer',
       description:
-        'Primary tool for users who want to bridge stablecoins between chains. Requires sourceChain, destinationChain, sourceTokenSymbol, and amount. Use destinationTokenSymbol only when the destination chain uses a different symbol. Do not pass null for chain or token fields.',
+        'Primary tool for users who want to bridge stablecoins between chains. Requires sourceChain, destinationChain, sourceTokenSymbol, and amount. Use token addresses when the selected chain has more than one token with the same symbol. Use destinationTokenSymbol only when the destination chain uses a different symbol. Do not pass null for chain or token fields.',
       inputSchema: {
         sourceChain: requiredChainSchema(),
         destinationChain: requiredChainSchema(),
@@ -1307,7 +1316,9 @@ export function registerAllbridgeTools(
         amountUnit: amountUnitSchema.default('human'),
         tokenType: tokenTypeSchema.default('swap'),
         sourceTokenSymbol: requiredTextSchema('Source stablecoin symbol.'),
+        sourceTokenAddress: optionalTextSchema('Optional exact source token address. Use when the source chain has multiple tokens with the same symbol.'),
         destinationTokenSymbol: optionalTextSchema('Optional destination stablecoin symbol. Defaults to the source symbol.'),
+        destinationTokenAddress: optionalTextSchema('Optional exact destination token address. Use when the destination chain has multiple tokens with the same symbol.'),
       },
     },
     async (parsed) => {
@@ -1318,7 +1329,7 @@ export function registerAllbridgeTools(
           catalog,
           optionalText(parsed.sourceChain),
           parsed.tokenType,
-          undefined,
+          optionalText(parsed.sourceTokenAddress),
           sourceTokenSymbol,
           {
             chain: 'sourceChain',
@@ -1330,7 +1341,7 @@ export function registerAllbridgeTools(
           catalog,
           optionalText(parsed.destinationChain),
           parsed.tokenType,
-          undefined,
+          optionalText(parsed.destinationTokenAddress),
           optionalText(parsed.destinationTokenSymbol) ?? sourceTokenSymbol,
           {
             chain: 'destinationChain',
@@ -1357,7 +1368,9 @@ export function registerAllbridgeTools(
         destinationChain: requiredChainSchema(),
         tokenType: tokenTypeSchema.default('swap'),
         sourceTokenSymbol: requiredTextSchema('Source stablecoin symbol.'),
+        sourceTokenAddress: optionalTextSchema('Optional exact source token address. Use when the source chain has multiple tokens with the same symbol.'),
         destinationTokenSymbol: optionalTextSchema('Optional destination stablecoin symbol.'),
+        destinationTokenAddress: optionalTextSchema('Optional exact destination token address. Use when the destination chain has multiple tokens with the same symbol.'),
       },
     },
     async (parsed) => {
@@ -1368,7 +1381,7 @@ export function registerAllbridgeTools(
           catalog,
           optionalText(parsed.sourceChain),
           parsed.tokenType,
-          undefined,
+          optionalText(parsed.sourceTokenAddress),
           sourceTokenSymbol,
           {
             chain: 'sourceChain',
@@ -1380,7 +1393,7 @@ export function registerAllbridgeTools(
           catalog,
           optionalText(parsed.destinationChain),
           parsed.tokenType,
-          undefined,
+          optionalText(parsed.destinationTokenAddress),
           optionalText(parsed.destinationTokenSymbol) ?? sourceTokenSymbol,
           {
             chain: 'destinationChain',
