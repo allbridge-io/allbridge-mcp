@@ -31,7 +31,20 @@ Steps 1, 2, 3, and 5 are this server. Step 4 is the signer.
 }
 ```
 
-Response carries a normalized amount, source/destination token details, messenger options, a recommended option, `bridgePortalUrl`, and a `nextAction` hint. If you don't know the symbols yet, call `list_supported_chains` and `list_supported_tokens` first. For a direct route comparison or a cheaper slice, use `find_bridge_routes` or `quote_bridge_transfer`.
+`plan_bridge_transfer` is **protocol-aware**. By default (`protocol: "auto"`) it queries Allbridge Core and Allbridge NEXT in parallel and returns:
+
+```json
+{
+  "protocols": ["core", "next"],
+  "core": { "summary": "...", "route": {...}, "options": [...], "recommendedOption": {...}, "nextAction": "...", "bridgePortalUrl": "...", "...": "..." },
+  "next": { "summary": "...", "route": {...}, "options": [...], "bridgePortalUrl": "https://next.allbridge.io" },
+  "errors": null
+}
+```
+
+Pass `protocol: "core"` or `protocol: "next"` only when the user has explicitly pinned a protocol. In `auto` mode, partial failures land in `errors.core` / `errors.next`; the tool only fails outright when both protocols fail. If the server has no NEXT client configured, `auto` silently degrades to `["core"]`.
+
+If you don't know the symbols yet, call `list_supported_chains` / `list_supported_tokens` (Core) or `list_next_chains` / `list_next_tokens` (NEXT) first. For a direct route comparison or a cheaper slice, use `find_bridge_routes` or `quote_bridge_transfer` (Core) or `quote_next_swap` (NEXT).
 
 If a chain exposes more than one token with the same symbol, provide the exact token address on the planning call so the server does not have to guess between contracts.
 
@@ -189,7 +202,9 @@ Common codes: `invalid_chain`, `invalid_token`, `insufficient_balance`, `route_n
 
 ## Tool catalogue
 
-**Bridge flow.** `plan_bridge_transfer`, `list_supported_chains`, `list_supported_tokens`, `find_bridge_routes`, `quote_bridge_transfer`, `check_sender_balances`, `create_bridge_execution_job`, `build_bridge_transactions`, `get_transfer_status`, `search_allbridge_transfers`, `get_allbridge_transfer`.
+**Bridge flow (Core).** `plan_bridge_transfer`, `list_supported_chains`, `list_supported_tokens`, `find_bridge_routes`, `quote_bridge_transfer`, `check_sender_balances`, `create_bridge_execution_job`, `build_bridge_transactions`, `get_transfer_status`, `search_allbridge_transfers`, `get_allbridge_transfer`.
+
+**Bridge flow (NEXT).** `plan_bridge_transfer` (with `protocol: "next"` or `"auto"`), `list_next_chains`, `list_next_tokens`, `quote_next_swap`, `build_next_transaction`.
 
 **Destination prerequisites.** `check_stellar_trustline`, `build_stellar_trustline_transaction`, `check_algorand_optin`, `build_algorand_optin_transaction`.
 

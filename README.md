@@ -20,8 +20,10 @@ Outbound REST API and explorer requests from `allbridge-mcp` include `X-Allbridg
 ## What It Does
 
 - Discovers routes, tokens, and chains
-- Plans bridge transfers and returns structured quote options
-- Builds execution jobs with ordered, ready-to-sign transaction steps
+- Plans bridge transfers across **Allbridge Core and Allbridge NEXT** in one call (`plan_bridge_transfer`); pass `protocol: "core"` or `"next"` to query only one
+- Returns structured quote options
+- Builds execution jobs with ordered, ready-to-sign transaction steps (Core)
+- Quotes and builds NEXT swap transactions (NEXT)
 - Checks sender balances before building a job
 - Broadcasts already-signed transactions for supported chain families
 - Tracks transfer status from the source-chain transaction hash
@@ -66,9 +68,10 @@ Copy `.env.example` to `.env` and edit. The most common knobs:
 
 | Variable | Purpose | Default |
 |----------|---------|---------|
-| `ALLBRIDGE_API_BASE_URL` | REST API base URL | `http://127.0.0.1:3000` |
-| `ALLBRIDGE_API_TIMEOUT_MS` | Request timeout | `20000` |
+| `ALLBRIDGE_API_BASE_URL` | Core REST API base URL | `http://127.0.0.1:3000` |
+| `ALLBRIDGE_API_TIMEOUT_MS` | Request timeout (shared by Core, Explorer, NEXT) | `20000` |
 | `ALLBRIDGE_EXPLORER_API_BASE_URL` | Public explorer API | `https://explorer.api.allbridgecoreapi.net` |
+| `ALLBRIDGE_NEXT_API_BASE_URL` | Allbridge NEXT REST API base URL | `https://api.next.allbridge.io` |
 | `MCP_TRANSPORT` | `stdio` or `streamable-http` | `stdio` |
 | `MCP_AUTH_MODE` | `none`, `bearer`, or `oauth` | `none` |
 | `MCP_PORT` | HTTP bind port | `3000` |
@@ -98,7 +101,9 @@ Full client recipes in [`examples/`](./examples).
 
 Grouped surfaces exposed by the server. Each tool returns structured errors (`ok`, `error.code`, `error.message`, `error.details`) so agents can recover without guessing.
 
-- **Bridge:** `plan_bridge_transfer`, `list_supported_chains`, `list_supported_tokens`, `find_bridge_routes`, `quote_bridge_transfer`, `check_sender_balances`, `create_bridge_execution_job`, `build_bridge_transactions`, `get_transfer_status`, `search_allbridge_transfers`, `get_allbridge_transfer`
+- **Bridge (Core + NEXT):** `plan_bridge_transfer` — protocol-aware (`protocol: "core" | "next" | "auto"`, default `auto`); always wraps the response as `{ protocols, core, next, errors }`.
+- **Bridge (Core):** `list_supported_chains`, `list_supported_tokens`, `find_bridge_routes`, `quote_bridge_transfer`, `check_sender_balances`, `create_bridge_execution_job`, `build_bridge_transactions`, `get_transfer_status`, `search_allbridge_transfers`, `get_allbridge_transfer`
+- **Bridge (NEXT):** `list_next_chains`, `list_next_tokens`, `quote_next_swap`, `build_next_transaction`
 - **Destination prerequisites:** `check_stellar_trustline`, `build_stellar_trustline_transaction`, `check_algorand_optin`, `build_algorand_optin_transaction`
 - **Broadcast:** `broadcast_signed_transaction`
 

@@ -19,7 +19,7 @@ Tools are grouped by responsibility: Bridge, Destination prerequisites, Broadcas
 
 ### `plan_bridge_transfer`
 
-Entry-point planner. Symbol-first input.
+Entry-point planner. Symbol-first input. Protocol-aware: queries Allbridge Core, Allbridge NEXT, or both.
 
 Inputs:
 
@@ -27,19 +27,24 @@ Inputs:
 - `destinationChain`
 - `sourceTokenSymbol`
 - `destinationTokenSymbol` (optional)
+- `sourceTokenAddress` / `destinationTokenAddress` (optional; disambiguate when a chain has multiple tokens with the same symbol)
 - `amount`
-- `amountUnit` (`"human"` or `"atomic"`)
-- `tokenType` (optional; e.g. `"swap"`)
+- `amountUnit` (`"human"` or `"base"`)
+- `tokenType` (optional; Core only — e.g. `"swap"`)
+- `protocol` (optional; `"core" | "next" | "auto"`, default `"auto"`)
 
-Returns:
+Returns the same envelope regardless of protocol:
 
-- normalized amount
-- source and destination token details
-- messenger options
-- a recommended option
-- next-action guidance
-- `bridgePortalName`, `bridgePortalUrl`
-- `bridgePortalDeepLink` when the route and messenger are known
+```json
+{
+  "protocols": ["core", "next"],
+  "core": { /* Core plan: summary, route, amount, options, recommendedOption, nextAction, bridgePortal* */ } | null,
+  "next": { /* NEXT plan: summary, amount, route, options, bridgePortal* */ } | null,
+  "errors": { "core": {...}, "next": {...} } | null
+}
+```
+
+In `auto` mode both protocols are queried in parallel; partial failures land in `errors`. The tool only returns an `isError: true` result if **both** protocols fail. If the server has no NEXT client configured, `auto` silently degrades to `["core"]`.
 
 Use this as the default entry point even if `find_bridge_routes` or `quote_bridge_transfer` look like a closer match; `plan_bridge_transfer` returns the agent guidance those do not.
 
@@ -159,6 +164,44 @@ Returns typed explorer hits, matched transfer summaries, explorer URL per transf
 Inputs: `transferId`.
 
 Returns the normalized transfer summary, the raw explorer record, the explorer URL, and the direct Allbridge history URL when the source chain and source transaction hash are available.
+
+## Allbridge NEXT
+
+Native NEXT-only tools. Inputs and outputs use the NEXT API contract directly (`tokenId`-first). For unified Core+NEXT planning, use `plan_bridge_transfer` with `protocol: "auto"` instead.
+
+### `list_next_chains`
+
+Inputs: none.
+
+Returns the unique chain symbols supported by the NEXT token catalog (derived from `/tokens`).
+
+### `list_next_tokens`
+
+Inputs: `chain` (optional, case-insensitive filter by chain symbol).
+
+Returns the NEXT token list. Each entry: `tokenId`, `chain`, `symbol`, `address`, `decimals`, `isNative?`.
+
+### `quote_next_swap`
+
+Inputs:
+
+- `sourceTokenId`, `destinationTokenId` (NEXT tokenIds, e.g. from `list_next_tokens`)
+- `amount` (source token base units, integer string)
+
+Returns `routes`: an array of `RouteResponse` (`amount`, `amountOut`, `relayerFees[]`, plus messenger and intermediary metadata). The whole route object must be passed back to `build_next_transaction` unchanged.
+
+### `build_next_transaction`
+
+Inputs:
+
+- the full chosen `RouteResponse` fields (`sourceTokenId`, `destinationTokenId`, `messenger`, `sourceSwap?`, `sourceIntermediaryTokenId?`, `destinationIntermediaryTokenId?`, `destinationSwap?`, `estimatedTime?`)
+- `amount` (source token base units, integer string)
+- `sourceAddress`, `destinationAddress`
+- `relayerFee` — required for non `near-intents` messengers
+- `refundTo` (optional; only meaningful when `messenger === "near-intents"`)
+- `metadata` (optional; opaque pass-through, e.g. referral code)
+
+Returns `transaction`: `{ amountOut, amountMin, tx: { contractAddress, value, tx? } }`. The transaction is unsigned; pair with `local-signer-mcp` (or any external signer) and broadcast via the chain-family broadcaster.
 
 ## Destination Prerequisites
 

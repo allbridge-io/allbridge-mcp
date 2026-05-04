@@ -38,16 +38,17 @@ The user says something like "bridge 50 USDC from Ethereum to Solana". That is e
 }
 ```
 
-The response includes:
+The response is wrapped: `{ protocols, core, next, errors }`. With the default `protocol: "auto"` both Allbridge Core and Allbridge NEXT are queried in parallel; pass `protocol: "core"` or `protocol: "next"` to query only one.
+
+Each populated protocol block includes:
 
 - normalized amount
 - source and destination token details
-- messenger options
-- a recommended option
-- a next-action hint
-- `bridgePortalName`, `bridgePortalUrl`, and `bridgePortalDeepLink` for the Allbridge Core web flow
+- messenger / route options
+- (Core only) a recommended option, a next-action hint, and `bridgePortalDeepLink`
+- `bridgePortalName`, `bridgePortalUrl`
 
-If the user or agent needs to compare routes directly, `find_bridge_routes` and `quote_bridge_transfer` expose lower-level slices.
+If the user or agent needs to compare routes directly, `find_bridge_routes` and `quote_bridge_transfer` (Core) and `quote_next_swap` (NEXT) expose lower-level slices.
 
 If a chain has multiple tokens with the same symbol, pass the exact token address in the planning call so the route uses the intended contract.
 

@@ -18,20 +18,29 @@ Do not use it as a wallet signer.
 
 ## Default Workflow
 
-1. Call `plan_bridge_transfer`.
+1. Call `plan_bridge_transfer`. The default `protocol: "auto"` returns options for both Allbridge Core and Allbridge NEXT side by side under `core` and `next` keys; pass `protocol: "core"` or `"next"` only when the user explicitly pins a protocol.
 2. If the token symbol is ambiguous on the chain, supply the exact token address before planning again.
-3. Review the suggested route and messenger.
-4. Call `check_sender_balances` as a sender balance preflight.
-5. If the preflight says balances are short, warn the user. Do not treat that response as a hard stop unless the user wants you to stop.
-6. Call `create_bridge_execution_job` for the normal execution path.
-7. Use `build_bridge_transactions` only when you need the lower-level raw transaction flow.
-8. Hand each step to `local-signer-mcp` or another signer that can return a signed payload.
-9. Use `broadcast_signed_transaction` only for payloads that are already signed.
-10. Call `get_transfer_status` until the transfer reaches the receive side or another terminal state.
+3. Review the options under `core` and/or `next`. Decide between protocols based on what the user cares about (output amount, speed, supported messengers, fee asset).
+4. **If the user picks a Core route:**
+   1. Call `check_sender_balances` as a sender balance preflight.
+   2. If the preflight says balances are short, warn the user. Do not treat that response as a hard stop unless the user wants you to stop.
+   3. Call `create_bridge_execution_job` for the normal execution path.
+   4. Use `build_bridge_transactions` only when you need the lower-level raw transaction flow.
+   5. Hand each step to `local-signer-mcp` or another signer.
+   6. Use `broadcast_signed_transaction` for already-signed payloads.
+5. **If the user picks a NEXT route:**
+   1. Pass the chosen route plus `sourceAddress`, `destinationAddress`, and the chosen `relayerFee` to `build_next_transaction`.
+   2. Hand the unsigned `tx` to a signer.
+   3. Use `broadcast_signed_transaction` for the signed payload.
+6. Call `get_transfer_status` (Core) or track on the source chain explorer (NEXT) until the transfer reaches a terminal state.
 
 ## Rules
 
-- Prefer `plan_bridge_transfer` over directly calling lower-level quote and route tools.
+- Prefer `plan_bridge_transfer` over directly calling lower-level quote and route tools. Default `protocol: "auto"` returns options from both Core and NEXT in one call.
+- Use `protocol: "core"` or `protocol: "next"` only when the user explicitly pins a protocol.
+- The `plan_bridge_transfer` response is always wrapped: `{ protocols, core, next, errors }`. Read fields from `result.core.*` / `result.next.*`. Both protocols may be present, only one, or neither (when both fail).
+- For NEXT-only flows: `list_next_chains`, `list_next_tokens`, `quote_next_swap`, `build_next_transaction`. NEXT uses `tokenId` (not address) as primary identifier.
+- NEXT does not have an execution-job equivalent. After `build_next_transaction`, sign and broadcast directly.
 - Prefer `check_sender_balances` before `create_bridge_execution_job` and `build_bridge_transactions`.
 - Treat `check_sender_balances` as advisory preflight, not a hard blocker.
 - Prefer `create_bridge_execution_job` over manually assembling the raw transaction flow.

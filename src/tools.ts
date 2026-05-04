@@ -11,6 +11,8 @@ import {
   TOKEN_TYPES,
 } from './constants.js';
 import { AllbridgeApiError, type AllbridgeApiClient } from './allbridge-api-client.js';
+import { NextApiError, type NextApiClient } from './next-api-client.js';
+import { planNextTransfer } from './next-tools.js';
 import {
   AllbridgeExplorerApiError,
   type AllbridgeExplorerApiClient,
@@ -930,6 +932,7 @@ export function registerAllbridgeTools(
   client: AllbridgeApiClient,
   explorerClient: AllbridgeExplorerApiClient,
   dependencies: ToolDependencies = defaultDependencies,
+  nextClient?: NextApiClient,
 ): void {
   type ToolResult = {
     content: Array<{ type: 'text'; text: string }>;
@@ -1121,6 +1124,8 @@ export function registerAllbridgeTools(
             feePaymentMethod: args.feePaymentMethod,
           });
         }
+        // pre-existing: WITH_ABR branch needs the chain catalog to resolve the ABR token; load lazily here.
+        const catalog = await loadChainCatalog(client);
         const abrToken = resolveTokenByAddressFromCatalog(catalog, abrTokenAddress, 'abrTokenAddress');
 
         const abrFeeKey = `abr:${abrTokenAddress.toLowerCase()}`;
@@ -1303,56 +1308,177 @@ export function registerAllbridgeTools(
     };
   }
 
+  async function runCorePlan(parsed: {
+    sourceChain?: string | null;
+    destinationChain?: string | null;
+    amount: string;
+    amountUnit: z.infer<typeof amountUnitSchema>;
+    tokenType: z.infer<typeof tokenTypeSchema>;
+    sourceTokenSymbol: string;
+    sourceTokenAddress?: string | null;
+    destinationTokenSymbol?: string | null;
+    destinationTokenAddress?: string | null;
+  }): Promise<Record<string, unknown>> {
+    const catalog = await loadChainCatalog(client, parsed.tokenType);
+    const sourceTokenSymbol = requireText(parsed.sourceTokenSymbol, 'sourceTokenSymbol');
+    const source = resolveTokenForChain(
+      catalog,
+      optionalText(parsed.sourceChain),
+      parsed.tokenType,
+      optionalText(parsed.sourceTokenAddress),
+      sourceTokenSymbol,
+      {
+        chain: 'sourceChain',
+        tokenAddress: 'sourceTokenAddress',
+        tokenSymbol: 'sourceTokenSymbol',
+      },
+    );
+    const destination = resolveTokenForChain(
+      catalog,
+      optionalText(parsed.destinationChain),
+      parsed.tokenType,
+      optionalText(parsed.destinationTokenAddress),
+      optionalText(parsed.destinationTokenSymbol) ?? sourceTokenSymbol,
+      {
+        chain: 'destinationChain',
+        tokenAddress: 'destinationTokenAddress',
+        tokenSymbol: 'destinationTokenSymbol',
+      },
+    );
+    const amount = normalizeAmount(requireText(parsed.amount, 'amount'), parsed.amountUnit, source.token);
+    const quote = await quoteTransfer(source.token, destination.token, amount.amountInBaseUnits);
+
+    return summarizePlan(source.token, destination.token, amount, quote) as unknown as Record<string, unknown>;
+  }
+
+  async function runNextPlan(parsed: {
+    sourceChain?: string | null;
+    destinationChain?: string | null;
+    amount: string;
+    amountUnit: z.infer<typeof amountUnitSchema>;
+    sourceTokenSymbol: string;
+    sourceTokenAddress?: string | null;
+    destinationTokenSymbol?: string | null;
+    destinationTokenAddress?: string | null;
+  }): Promise<Record<string, unknown>> {
+    if (!nextClient) {
+      throw new UserFacingToolError(
+        'validation_error',
+        'Allbridge NEXT client is not configured for this server.',
+        {},
+      );
+    }
+    const result = await planNextTransfer(nextClient, {
+      sourceChain: requireText(parsed.sourceChain, 'sourceChain'),
+      destinationChain: requireText(parsed.destinationChain, 'destinationChain'),
+      sourceTokenSymbol: requireText(parsed.sourceTokenSymbol, 'sourceTokenSymbol'),
+      destinationTokenSymbol: optionalText(parsed.destinationTokenSymbol),
+      sourceTokenAddress: optionalText(parsed.sourceTokenAddress),
+      destinationTokenAddress: optionalText(parsed.destinationTokenAddress),
+      amount: requireText(parsed.amount, 'amount'),
+      amountUnit: parsed.amountUnit,
+    });
+    return result as unknown as Record<string, unknown>;
+  }
+
+  function serializePlanError(err: unknown): { code: string; message: string; details: unknown } {
+    if (err instanceof UserFacingToolError) {
+      return { code: err.code, message: err.message, details: err.details ?? null };
+    }
+    if (err instanceof AllbridgeApiError || err instanceof NextApiError) {
+      return {
+        code: 'validation_error',
+        message: err.message,
+        details: err.details ?? null,
+      };
+    }
+    return {
+      code: 'validation_error',
+      message: err instanceof Error ? err.message : String(err),
+      details: null,
+    };
+  }
+
   server.registerTool(
     'plan_bridge_transfer',
     {
-      title: 'Plan Stablecoin Bridge Transfer',
+      title: 'Plan Bridge Transfer (Core + NEXT)',
       description:
-        'Primary tool for users who want to bridge stablecoins between chains. Requires sourceChain, destinationChain, sourceTokenSymbol, and amount. Use token addresses when the selected chain has more than one token with the same symbol. Use destinationTokenSymbol only when the destination chain uses a different symbol. Do not pass null for chain or token fields.',
+        'Primary tool for planning a cross-chain transfer. By default returns options from BOTH Allbridge Core and Allbridge NEXT side by side; pass protocol="core" or protocol="next" to query only one. Requires sourceChain, destinationChain, sourceTokenSymbol, and amount. Use token addresses when the selected chain has more than one token with the same symbol. Use destinationTokenSymbol only when the destination chain uses a different symbol. Response always wrapped as { protocols, core, next, errors }.',
       inputSchema: {
         sourceChain: requiredChainSchema(),
         destinationChain: requiredChainSchema(),
         amount: requiredTextSchema('Bridge amount. Do not pass null.'),
         amountUnit: amountUnitSchema.default('human'),
-        tokenType: tokenTypeSchema.default('swap'),
-        sourceTokenSymbol: requiredTextSchema('Source stablecoin symbol.'),
+        tokenType: tokenTypeSchema.default('swap').describe('Core token type (swap | pool | yield). Ignored by NEXT.'),
+        sourceTokenSymbol: requiredTextSchema('Source token symbol (e.g., USDC, ETH).'),
         sourceTokenAddress: optionalTextSchema('Optional exact source token address. Use when the source chain has multiple tokens with the same symbol.'),
-        destinationTokenSymbol: optionalTextSchema('Optional destination stablecoin symbol. Defaults to the source symbol.'),
+        destinationTokenSymbol: optionalTextSchema('Optional destination token symbol. Defaults to the source symbol.'),
         destinationTokenAddress: optionalTextSchema('Optional exact destination token address. Use when the destination chain has multiple tokens with the same symbol.'),
+        protocol: z
+          .enum(['core', 'next', 'auto'])
+          .default('auto')
+          .describe('Which Allbridge protocol to query. "auto" runs both in parallel and returns whichever succeeds.'),
       },
     },
     async (parsed) => {
-      return runTool(async () => {
-        const catalog = await loadChainCatalog(client, parsed.tokenType);
-        const sourceTokenSymbol = requireText(parsed.sourceTokenSymbol, 'sourceTokenSymbol');
-        const source = resolveTokenForChain(
-          catalog,
-          optionalText(parsed.sourceChain),
-          parsed.tokenType,
-          optionalText(parsed.sourceTokenAddress),
-          sourceTokenSymbol,
-          {
-            chain: 'sourceChain',
-            tokenAddress: 'sourceTokenAddress',
-            tokenSymbol: 'sourceTokenSymbol',
-          },
-        );
-        const destination = resolveTokenForChain(
-          catalog,
-          optionalText(parsed.destinationChain),
-          parsed.tokenType,
-          optionalText(parsed.destinationTokenAddress),
-          optionalText(parsed.destinationTokenSymbol) ?? sourceTokenSymbol,
-          {
-            chain: 'destinationChain',
-            tokenAddress: 'destinationTokenAddress',
-            tokenSymbol: 'destinationTokenSymbol',
-          },
-        );
-        const amount = normalizeAmount(requireText(parsed.amount, 'amount'), parsed.amountUnit, source.token);
-        const quote = await quoteTransfer(source.token, destination.token, amount.amountInBaseUnits);
+      const protocol = parsed.protocol;
 
-        return summarizePlan(source.token, destination.token, amount, quote);
+      if (protocol === 'core') {
+        return runTool(async () => {
+          const core = await runCorePlan(parsed);
+          return { protocols: ['core'], core, next: null, errors: null };
+        });
+      }
+
+      if (protocol === 'next') {
+        return runTool(async () => {
+          const next = await runNextPlan(parsed);
+          return { protocols: ['next'], core: null, next, errors: null };
+        });
+      }
+
+      // auto. If NEXT client is not configured, silently degrade to core-only —
+      // the caller did not opt into NEXT, so an infrastructure miss should not
+      // surface as an error.
+      if (!nextClient) {
+        return runTool(async () => {
+          const core = await runCorePlan(parsed);
+          return { protocols: ['core'], core, next: null, errors: null };
+        });
+      }
+
+      // run both, never throw if at least one succeeds
+      const [coreSettled, nextSettled] = await Promise.allSettled([
+        runCorePlan(parsed),
+        runNextPlan(parsed),
+      ]);
+
+      const errors: { core?: ReturnType<typeof serializePlanError>; next?: ReturnType<typeof serializePlanError> } = {};
+      const core = coreSettled.status === 'fulfilled' ? coreSettled.value : null;
+      const next = nextSettled.status === 'fulfilled' ? nextSettled.value : null;
+      if (coreSettled.status === 'rejected') {
+        errors.core = serializePlanError(coreSettled.reason);
+      }
+      if (nextSettled.status === 'rejected') {
+        errors.next = serializePlanError(nextSettled.reason);
+      }
+
+      if (!core && !next) {
+        return errorResult(
+          new UserFacingToolError(
+            'validation_error',
+            'Both Core and NEXT planners failed.',
+            errors,
+          ),
+        );
+      }
+
+      return textResult({
+        protocols: ['core', 'next'],
+        core,
+        next,
+        errors: Object.keys(errors).length > 0 ? errors : null,
       });
     },
   );

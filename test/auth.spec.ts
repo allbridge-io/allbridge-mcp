@@ -12,6 +12,7 @@ function createOauthConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     ALLBRIDGE_API_BASE_URL: 'http://127.0.0.1:3000',
     ALLBRIDGE_API_TIMEOUT_MS: 20_000,
     ALLBRIDGE_EXPLORER_API_BASE_URL: 'https://explorer.api.allbridgecoreapi.net',
+    ALLBRIDGE_NEXT_API_BASE_URL: 'https://api.next.allbridge.io',
     MCP_AUTH_MODE: 'oauth',
     MCP_TRANSPORT: 'streamable-http',
     MCP_HOST: '0.0.0.0',

@@ -3,6 +3,11 @@ import { beforeEach, describe, expect, jest, test } from '@jest/globals';
 
 import { AllbridgeApiError, type AllbridgeApiClient } from '../src/allbridge-api-client.js';
 import { type AllbridgeExplorerApiClient } from '../src/explorer-api-client.js';
+import {
+  type NextApiClient,
+  type NextRouteResponse,
+  type NextToken,
+} from '../src/next-api-client.js';
 import { registerAllbridgeTools } from '../src/tools.js';
 import type { TokenWithChainDetails } from '../src/types.js';
 
@@ -218,56 +223,41 @@ describe('registerAllbridgeTools', () => {
       sourceTokenSymbol: 'USDC',
     });
 
+    // plan_bridge_transfer is now protocol-aware; with no nextClient injected it
+    // degrades to core-only and wraps the legacy payload under the `core` key.
     expect(result.structuredContent).toEqual({
-      summary: 'Bridge 1 USDC from ETH to SOL',
-      route: {
-        source: {
-          symbol: 'USDC',
-          name: 'USD Coin',
-          tokenAddress: '0xeth-usdc',
-          decimals: 6,
-          chainSymbol: 'ETH',
-          chainName: 'Ethereum',
-          chainType: 'EVM',
-        },
-        destination: {
-          symbol: 'USDC',
-          name: 'USD Coin',
-          tokenAddress: 'sol-usdc',
-          decimals: 6,
-          chainSymbol: 'SOL',
-          chainName: 'Solana',
-          chainType: 'SOLANA',
-        },
-      },
-      amount: {
-        amountInBaseUnits: '1000000',
-        amountInHumanUnits: '1',
-      },
-      availableMessengers: ['ALLBRIDGE', 'CCTP'],
-      quoteMode: 'direct',
-      recommendedOption: {
-        messenger: 'CCTP',
-        estimatedTimeMs: 600000,
-        paymentMethods: [
-          {
-            feePaymentMethod: 'WITH_NATIVE_CURRENCY',
-            feeInBaseUnits: '1000',
-            estimatedReceive: {
-              minInBaseUnits: '1000000',
-              maxInBaseUnits: '1000000',
-              minInHumanUnits: '1',
-              maxInHumanUnits: '1',
-            },
-            transferFeeInBaseUnits: null,
-            relayerFeeInNative: null,
-            relayerFeeInStable: null,
-            relayerFeeInAbr: null,
+      protocols: ['core'],
+      next: null,
+      errors: null,
+      core: {
+        summary: 'Bridge 1 USDC from ETH to SOL',
+        route: {
+          source: {
+            symbol: 'USDC',
+            name: 'USD Coin',
+            tokenAddress: '0xeth-usdc',
+            decimals: 6,
+            chainSymbol: 'ETH',
+            chainName: 'Ethereum',
+            chainType: 'EVM',
           },
-        ],
-      },
-      options: [
-        {
+          destination: {
+            symbol: 'USDC',
+            name: 'USD Coin',
+            tokenAddress: 'sol-usdc',
+            decimals: 6,
+            chainSymbol: 'SOL',
+            chainName: 'Solana',
+            chainType: 'SOLANA',
+          },
+        },
+        amount: {
+          amountInBaseUnits: '1000000',
+          amountInHumanUnits: '1',
+        },
+        availableMessengers: ['ALLBRIDGE', 'CCTP'],
+        quoteMode: 'direct',
+        recommendedOption: {
           messenger: 'CCTP',
           estimatedTimeMs: 600000,
           paymentMethods: [
@@ -287,12 +277,34 @@ describe('registerAllbridgeTools', () => {
             },
           ],
         },
-      ],
-      bridgePortalName: 'Allbridge Core',
-      bridgePortalUrl: 'https://core.allbridge.io',
-      bridgePortalDeepLink: 'https://core.allbridge.io/?f=ETH&t=SOL&ft=USDC&tt=USDC&send=1&messenger=CCTP',
-      nextAction:
-        'Before calling create_bridge_execution_job, ask for the sender address and recipient address, confirm the source and destination token symbols if they were not already pinned, and run check_sender_balances. Proceed only if canProceed is true.',
+        options: [
+          {
+            messenger: 'CCTP',
+            estimatedTimeMs: 600000,
+            paymentMethods: [
+              {
+                feePaymentMethod: 'WITH_NATIVE_CURRENCY',
+                feeInBaseUnits: '1000',
+                estimatedReceive: {
+                  minInBaseUnits: '1000000',
+                  maxInBaseUnits: '1000000',
+                  minInHumanUnits: '1',
+                  maxInHumanUnits: '1',
+                },
+                transferFeeInBaseUnits: null,
+                relayerFeeInNative: null,
+                relayerFeeInStable: null,
+                relayerFeeInAbr: null,
+              },
+            ],
+          },
+        ],
+        bridgePortalName: 'Allbridge Core',
+        bridgePortalUrl: 'https://core.allbridge.io',
+        bridgePortalDeepLink: 'https://core.allbridge.io/?f=ETH&t=SOL&ft=USDC&tt=USDC&send=1&messenger=CCTP',
+        nextAction:
+          'Before calling create_bridge_execution_job, ask for the sender address and recipient address, confirm the source and destination token symbols if they were not already pinned, and run check_sender_balances. Proceed only if canProceed is true.',
+      },
     });
   });
 
@@ -966,7 +978,7 @@ describe('registerAllbridgeTools', () => {
     });
 
     expect(result.structuredContent.destinationSetup).toMatchObject(expectedSetup);
-    expect(result.structuredContent.destinationSetup.required).toBe(true);
+    expect((result.structuredContent.destinationSetup as { required: boolean }).required).toBe(true);
     expect(result.structuredContent.nextAction).toContain(expectedSetup.checkTool);
     expect(result.structuredContent.nextAction).toContain(expectedSetup.buildTool);
   });
@@ -1689,7 +1701,7 @@ describe('registerAllbridgeTools', () => {
         },
       ],
     });
-    expect((result.structuredContent.results as Array<Record<string, unknown>>)[0].matchTypes).toContain('senderAddress');
+    expect((result.structuredContent.results as Array<Record<string, unknown>>)[0]?.matchTypes).toContain('senderAddress');
   });
 
   test('search_allbridge_transfers lists transfers by direct filters without query search', async () => {
@@ -1976,7 +1988,7 @@ describe('registerAllbridgeTools', () => {
         },
       ],
     });
-    expect((result.structuredContent.results as Array<Record<string, unknown>>)[0].matchTypes).toContain('sourceTxId');
+    expect((result.structuredContent.results as Array<Record<string, unknown>>)[0]?.matchTypes).toContain('sourceTxId');
   });
 
   test('get_allbridge_transfer returns a single explorer transfer with raw details', async () => {
@@ -2510,5 +2522,255 @@ describe('registerAllbridgeTools', () => {
       txHash: `${chainFamily.toLowerCase()}-tx`,
       receipt,
     });
+  });
+});
+
+describe('plan_bridge_transfer protocol-aware behavior', () => {
+  let server: FakeMcpServer;
+  let client: jest.Mocked<AllbridgeApiClient>;
+  let explorerClient: jest.Mocked<AllbridgeExplorerApiClient>;
+  let nextClient: jest.Mocked<NextApiClient>;
+
+  const NEXT_TOKENS: NextToken[] = [
+    { tokenId: 'eth-usdc', chain: 'ETH', symbol: 'USDC', address: '0xEthUsdc', decimals: 6 },
+    { tokenId: 'sol-usdc', chain: 'SOL', symbol: 'USDC', address: 'SoLuSdC', decimals: 6 },
+  ];
+
+  const NEXT_ROUTES: NextRouteResponse[] = [
+    {
+      sourceTokenId: 'eth-usdc',
+      destinationTokenId: 'sol-usdc',
+      messenger: 'allbridge',
+      estimatedTime: 60,
+      amount: '1000000',
+      amountOut: '999000',
+      relayerFees: [{ tokenId: 'native', amount: '5000' }],
+    },
+  ];
+
+  function setupCoreMocks(): void {
+    client.getTokens.mockResolvedValue([
+      createToken({
+        symbol: 'USDC',
+        tokenAddress: '0xeth-usdc',
+        chainSymbol: 'ETH',
+        cctpAddress: '0xeth-cctp',
+      }),
+      createToken({
+        symbol: 'USDC',
+        tokenAddress: 'sol-usdc',
+        chainSymbol: 'SOL',
+        chainName: 'Solana',
+        chainType: 'SOLANA',
+        cctpAddress: 'sol-cctp',
+      }),
+    ]);
+    client.getBridgeQuote.mockResolvedValue({
+      amountInt: '1000000',
+      amountFloat: '1',
+      sourceTokenAddress: '0xeth-usdc',
+      destinationTokenAddress: 'sol-usdc',
+      options: [
+        {
+          messenger: 'CCTP',
+          estimatedTimeMs: 600000,
+          paymentMethods: [
+            {
+              feePaymentMethod: 'WITH_NATIVE_CURRENCY',
+              fee: '1000',
+              estimatedAmount: { min: '1000000', max: '1000000' },
+            },
+          ],
+        },
+      ],
+    });
+  }
+
+  beforeEach(() => {
+    server = new FakeMcpServer();
+    client = createClientMock();
+    explorerClient = createExplorerClientMock();
+    nextClient = {
+      getTokens: jest.fn(),
+      postQuote: jest.fn(),
+      postCreateTx: jest.fn(),
+    } as unknown as jest.Mocked<NextApiClient>;
+
+    registerAllbridgeTools(
+      server as unknown as McpServer,
+      client,
+      explorerClient,
+      undefined,
+      nextClient,
+    );
+    setupCoreMocks();
+  });
+
+  test('protocol="core" returns only core block', async () => {
+    nextClient.getTokens.mockResolvedValue(NEXT_TOKENS);
+    nextClient.postQuote.mockResolvedValue(NEXT_ROUTES);
+
+    const result = await server.getHandler('plan_bridge_transfer')({
+      sourceChain: 'Ethereum',
+      destinationChain: 'Solana',
+      amount: '1',
+      amountUnit: 'human',
+      tokenType: 'swap',
+      sourceTokenSymbol: 'USDC',
+      protocol: 'core',
+    });
+
+    expect(result.structuredContent).toMatchObject({
+      protocols: ['core'],
+      next: null,
+      errors: null,
+    });
+    expect(result.structuredContent.core).toBeTruthy();
+    expect(nextClient.postQuote).not.toHaveBeenCalled();
+  });
+
+  test('protocol="next" returns only next block', async () => {
+    nextClient.getTokens.mockResolvedValue(NEXT_TOKENS);
+    nextClient.postQuote.mockResolvedValue(NEXT_ROUTES);
+
+    const result = await server.getHandler('plan_bridge_transfer')({
+      sourceChain: 'ETH',
+      destinationChain: 'SOL',
+      amount: '1',
+      amountUnit: 'human',
+      tokenType: 'swap',
+      sourceTokenSymbol: 'USDC',
+      protocol: 'next',
+    });
+
+    expect(result.structuredContent).toMatchObject({
+      protocols: ['next'],
+      core: null,
+      errors: null,
+    });
+    expect(result.structuredContent.next).toBeTruthy();
+    expect(client.getBridgeQuote).not.toHaveBeenCalled();
+  });
+
+  test('protocol="auto" runs both in parallel', async () => {
+    nextClient.getTokens.mockResolvedValue(NEXT_TOKENS);
+    nextClient.postQuote.mockResolvedValue(NEXT_ROUTES);
+
+    const result = await server.getHandler('plan_bridge_transfer')({
+      sourceChain: 'Ethereum',
+      destinationChain: 'Solana',
+      amount: '1',
+      amountUnit: 'human',
+      tokenType: 'swap',
+      sourceTokenSymbol: 'USDC',
+      protocol: 'auto',
+    });
+
+    expect(result.structuredContent).toMatchObject({
+      protocols: ['core', 'next'],
+      errors: null,
+    });
+    expect(result.structuredContent.core).toBeTruthy();
+    expect(result.structuredContent.next).toBeTruthy();
+  });
+
+  test('protocol="auto" with NEXT failing returns partial result with errors.next', async () => {
+    nextClient.getTokens.mockRejectedValue(new Error('boom'));
+
+    const result = await server.getHandler('plan_bridge_transfer')({
+      sourceChain: 'Ethereum',
+      destinationChain: 'Solana',
+      amount: '1',
+      amountUnit: 'human',
+      tokenType: 'swap',
+      sourceTokenSymbol: 'USDC',
+      protocol: 'auto',
+    });
+
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toMatchObject({
+      protocols: ['core', 'next'],
+    });
+    expect(result.structuredContent.core).toBeTruthy();
+    expect(result.structuredContent.next).toBeNull();
+    expect((result.structuredContent.errors as { next?: unknown }).next).toBeTruthy();
+  });
+
+  test('protocol="auto" with both failing returns isError', async () => {
+    client.getBridgeQuote.mockRejectedValue(new AllbridgeApiError('core-down', 503));
+    client.getAmountToBeReceived.mockRejectedValue(new AllbridgeApiError('core-down', 503));
+    nextClient.getTokens.mockRejectedValue(new Error('next-down'));
+
+    const result = await server.getHandler('plan_bridge_transfer')({
+      sourceChain: 'Ethereum',
+      destinationChain: 'Solana',
+      amount: '1',
+      amountUnit: 'human',
+      tokenType: 'swap',
+      sourceTokenSymbol: 'USDC',
+      protocol: 'auto',
+    });
+
+    expect(result.isError).toBe(true);
+  });
+});
+
+describe('plan_bridge_transfer auto without nextClient degrades to core-only', () => {
+  let server: FakeMcpServer;
+  let client: jest.Mocked<AllbridgeApiClient>;
+  let explorerClient: jest.Mocked<AllbridgeExplorerApiClient>;
+
+  beforeEach(() => {
+    server = new FakeMcpServer();
+    client = createClientMock();
+    explorerClient = createExplorerClientMock();
+    registerAllbridgeTools(server as unknown as McpServer, client, explorerClient);
+    client.getTokens.mockResolvedValue([
+      createToken({ symbol: 'USDC', tokenAddress: '0xeth-usdc', chainSymbol: 'ETH' }),
+      createToken({
+        symbol: 'USDC',
+        tokenAddress: 'sol-usdc',
+        chainSymbol: 'SOL',
+        chainName: 'Solana',
+        chainType: 'SOLANA',
+      }),
+    ]);
+    client.getBridgeQuote.mockResolvedValue({
+      amountInt: '1000000',
+      amountFloat: '1',
+      sourceTokenAddress: '0xeth-usdc',
+      destinationTokenAddress: 'sol-usdc',
+      options: [
+        {
+          messenger: 'ALLBRIDGE',
+          estimatedTimeMs: 120000,
+          paymentMethods: [
+            {
+              feePaymentMethod: 'WITH_NATIVE_CURRENCY',
+              fee: '1000',
+              estimatedAmount: { min: '1000000', max: '1000000' },
+            },
+          ],
+        },
+      ],
+    });
+  });
+
+  test('returns protocols=[core] silently when NEXT client missing', async () => {
+    const result = await server.getHandler('plan_bridge_transfer')({
+      sourceChain: 'Ethereum',
+      destinationChain: 'Solana',
+      amount: '1',
+      amountUnit: 'human',
+      tokenType: 'swap',
+      sourceTokenSymbol: 'USDC',
+    });
+
+    expect(result.structuredContent).toMatchObject({
+      protocols: ['core'],
+      next: null,
+      errors: null,
+    });
+    expect(result.structuredContent.core).toBeTruthy();
   });
 });

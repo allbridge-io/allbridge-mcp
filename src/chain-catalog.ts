@@ -11,7 +11,7 @@ import { normalizeSymbol } from './utils.js';
 import type { TokenWithChainDetails } from './types.js';
 import { UserFacingToolError } from './tool-errors.js';
 
-const COMMON_CHAIN_ALIASES: Record<string, string> = {
+export const COMMON_CHAIN_ALIASES: Record<string, string> = {
   ETHEREUM: 'ETH',
   TRON: 'TRX',
   TRX: 'TRX',

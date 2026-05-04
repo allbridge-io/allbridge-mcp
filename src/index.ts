@@ -5,6 +5,8 @@ import { AllbridgeApiClient } from './allbridge-api-client.js';
 import { AllbridgeExplorerApiClient } from './explorer-api-client.js';
 import { config } from './config.js';
 import { startStreamableHttpServer } from './http-server.js';
+import { NextApiClient } from './next-api-client.js';
+import { registerNextTools } from './next-tools.js';
 import { registerAllbridgeTools } from './tools.js';
 
 function createServer(): McpServer {
@@ -21,8 +23,13 @@ function createServer(): McpServer {
     config.ALLBRIDGE_EXPLORER_API_BASE_URL,
     config.ALLBRIDGE_API_TIMEOUT_MS,
   );
+  const nextClient = new NextApiClient(
+    config.ALLBRIDGE_NEXT_API_BASE_URL,
+    config.ALLBRIDGE_API_TIMEOUT_MS,
+  );
 
-  registerAllbridgeTools(server, apiClient, explorerClient);
+  registerAllbridgeTools(server, apiClient, explorerClient, undefined, nextClient);
+  registerNextTools(server, nextClient);
 
   return server;
 }

@@ -54,13 +54,14 @@ Request:
 }
 ```
 
-Expected result:
+Expected result (envelope `{ protocols, core, next, errors }`):
 
-- normalized amount
-- route details
-- available messengers
-- recommended quote option
-- next action guidance
+- `protocols`: which protocols were queried (defaults to both Core and NEXT)
+- `core` (when present): normalized amount, route details, available messengers, recommended quote option, next-action guidance
+- `next` (when present): normalized amount, NEXT route details, NEXT route options
+- `errors`: per-protocol failure descriptors when running `auto` and one protocol fails
+
+Pass `protocol: "core"` or `protocol: "next"` to scope to a single protocol when the user has explicitly pinned one.
 
 ## 3. Create an execution job
 
