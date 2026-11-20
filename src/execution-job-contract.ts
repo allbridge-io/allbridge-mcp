@@ -37,7 +37,7 @@ export type BridgeExecutionStepContract = {
 
 export type DestinationSetupContract = {
   required: boolean;
-  chainFamily: 'ALG' | 'SRB' | null;
+  chainFamily: 'SRB' | null;
   chainSymbol: string | null;
   accountAddress: string;
   checkTool: string;

@@ -1,7 +1,5 @@
-import algosdk from 'algosdk';
 import { isAddress as isEvmAddress } from 'ethers';
 import { PublicKey } from '@solana/web3.js';
-import { isValidSuiAddress } from '@mysten/sui/utils';
 import { validateStacksAddress } from '@stacks/transactions';
 import { StrKey } from '@stellar/stellar-sdk';
 import TronWeb from 'tronweb';
@@ -19,8 +17,6 @@ export const COMMON_CHAIN_ALIASES: Record<string, string> = {
   STACKS: 'STX',
   STELLAR: 'SRB',
   SOROBAN: 'SRB',
-  ALGORAND: 'ALG',
-  SUI: 'SUI',
   ARBITRUM: 'ARB',
   OPTIMISM: 'OPT',
   BASE: 'BASE',
@@ -70,11 +66,8 @@ export type ResolvedTokenSelection = {
   token: TokenWithChainDetails;
 };
 
-export async function loadChainCatalog(
-  client: AllbridgeApiClient,
-  tokenType: 'swap' | 'pool' | 'yield' = 'swap',
-): Promise<ChainCatalog> {
-  const tokens = await client.getTokens({ type: tokenType });
+export async function loadChainCatalog(client: AllbridgeApiClient): Promise<ChainCatalog> {
+  const tokens = await client.getTokens({ type: 'swap' });
   const chainsBySymbol = new Map<string, ChainCatalogEntry>();
 
   for (const token of tokens) {
@@ -177,7 +170,6 @@ export function resolveChainFromCatalog(
 export function resolveTokenForChain(
   catalog: ChainCatalog,
   chainInput: string | null | undefined,
-  tokenType: 'swap' | 'pool' | 'yield',
   tokenAddress: string | null | undefined,
   tokenSymbol: string | null | undefined,
   fieldNames: {
@@ -197,7 +189,6 @@ export function resolveTokenForChain(
         field: fieldNames.tokenAddress,
         chainSymbol: chain.chainSymbol,
         chainName: chain.chainName,
-        tokenType,
         supportedTokens: summarizeSupportedTokens(chain.tokens),
       });
     }
@@ -221,7 +212,6 @@ export function resolveTokenForChain(
       field: fieldNames.tokenSymbol,
       chainSymbol: chain.chainSymbol,
       chainName: chain.chainName,
-      tokenType,
       tokenSymbol: tokenSymbol.trim(),
       matchingTokens: summarizeSupportedTokens(matchingTokens),
       supportedTokens: summarizeSupportedTokens(chain.tokens),
@@ -236,7 +226,6 @@ export function resolveTokenForChain(
       field: fieldNames.tokenSymbol,
       chainSymbol: chain.chainSymbol,
       chainName: chain.chainName,
-      tokenType,
       supportedTokens: summarizeSupportedTokens(chain.tokens),
     });
   }
@@ -294,7 +283,6 @@ export function validateAddressForChainType(
     case 'SOLANA':
       validator = 'Solana PublicKey';
       try {
-        // eslint-disable-next-line no-new
         new PublicKey(value);
         valid = true;
       } catch {
@@ -307,10 +295,6 @@ export function validateAddressForChainType(
         ? TronWeb.utils.address.isAddress(value)
         : false;
       break;
-    case 'ALG':
-      validator = 'algosdk.isValidAddress';
-      valid = algosdk.isValidAddress(value);
-      break;
     case 'STX':
       validator = 'validateStacksAddress';
       valid = validateStacksAddress(value);
@@ -318,10 +302,6 @@ export function validateAddressForChainType(
     case 'SRB':
       validator = 'StrKey.isValidEd25519PublicKey / StrKey.isValidContract';
       valid = StrKey.isValidEd25519PublicKey(value) || StrKey.isValidContract(value);
-      break;
-    case 'SUI':
-      validator = 'isValidSuiAddress';
-      valid = isValidSuiAddress(value);
       break;
     default:
       valid = value.length > 0;

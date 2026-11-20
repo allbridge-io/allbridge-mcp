@@ -1,8 +1,5 @@
-import algosdk from 'algosdk';
-import bs58 from 'bs58';
 import { JsonRpcProvider, TransactionResponse } from 'ethers';
 import { Connection, VersionedTransaction } from '@solana/web3.js';
-import { SuiClient } from '@mysten/sui/client';
 import { BytesReader, broadcastTransaction, deserializeTransaction } from '@stacks/transactions';
 import { STACKS_MAINNET, STACKS_TESTNET } from '@stacks/network';
 import { TransactionBuilder, rpc as SorobanRpc, type Transaction as StellarTransaction } from '@stellar/stellar-sdk';
@@ -11,12 +8,10 @@ import { TronWeb } from 'tronweb';
 import { config } from './config.js';
 import type {
   BroadcastResult,
-  SignedAlgorandTransaction,
   SignedEvmTransaction,
   SignedSolanaTransaction,
   SignedSorobanTransaction,
   SignedStacksTransaction,
-  SignedSuiTransaction,
   SignedTransaction,
   SignedTronTransaction,
 } from './transaction-types.js';
@@ -91,14 +86,6 @@ function getTronWeb(): TronWeb {
   );
 }
 
-function getAlgodClient() {
-  if (!config.ALLBRIDGE_ALG_RPC_URL) {
-    throw new Error('ALLBRIDGE_ALG_RPC_URL is not configured.');
-  }
-
-  return new algosdk.Algodv2('', config.ALLBRIDGE_ALG_RPC_URL);
-}
-
 async function resolveStacksNetworkForRpcUrl(rpcUrl: string) {
   const infoUrl = new URL('/v2/info', rpcUrl.endsWith('/') ? rpcUrl : `${rpcUrl}/`).toString();
   const response = await fetch(infoUrl, {
@@ -147,14 +134,6 @@ function getSorobanClient() {
   return new SorobanRpc.Server(config.ALLBRIDGE_SRB_RPC_URL);
 }
 
-function getSuiClient(): SuiClient {
-  if (!config.ALLBRIDGE_SUI_RPC_URL) {
-    throw new Error('ALLBRIDGE_SUI_RPC_URL is not configured.');
-  }
-
-  return new SuiClient({ url: config.ALLBRIDGE_SUI_RPC_URL });
-}
-
 async function broadcastEvm(signedTransaction: SignedEvmTransaction): Promise<BroadcastResult> {
   const provider = new JsonRpcProvider(resolveEvmRpcUrl(signedTransaction));
   const response: TransactionResponse = await provider.broadcastTransaction(signedTransaction.signedTransaction);
@@ -200,18 +179,6 @@ async function broadcastTron(signedTransaction: Record<string, unknown>): Promis
   };
 }
 
-async function broadcastAlgorand(signedTransactionsBase64: string[]): Promise<BroadcastResult> {
-  const algod = getAlgodClient();
-  const signedTransactions = signedTransactionsBase64.map((value) => Buffer.from(value, 'base64'));
-  const { txid } = await algod.sendRawTransaction(signedTransactions).do();
-
-  return {
-    chainFamily: 'ALG',
-    txHash: txid,
-    receipt: null,
-  };
-}
-
 async function broadcastStacks(signedTransactionHex: string): Promise<BroadcastResult> {
   if (!config.ALLBRIDGE_STX_RPC_URL) {
     throw new Error('ALLBRIDGE_STX_RPC_URL is not configured.');
@@ -240,25 +207,6 @@ async function broadcastSoroban(signedTransactionXdr: string): Promise<Broadcast
   };
 }
 
-async function broadcastSui(signedTransaction: { bytesBase64: string; signature: string }): Promise<BroadcastResult> {
-  const client = getSuiClient();
-  const result = await client.executeTransactionBlock({
-    transactionBlock: Buffer.from(signedTransaction.bytesBase64, 'base64'),
-    signature: signedTransaction.signature,
-    options: {
-      showEffects: true,
-      showEvents: true,
-      showObjectChanges: true,
-    },
-  });
-
-  return {
-    chainFamily: 'SUI',
-    txHash: result.digest,
-    receipt: result as unknown as Record<string, unknown>,
-  };
-}
-
 export async function broadcastSignedTransactionByFamily(signedTransaction: SignedTransaction): Promise<BroadcastResult> {
   switch (signedTransaction.chainFamily) {
     case 'EVM':
@@ -267,14 +215,10 @@ export async function broadcastSignedTransactionByFamily(signedTransaction: Sign
       return broadcastSolana((signedTransaction as SignedSolanaTransaction).signedTransactionHex);
     case 'TRX':
       return broadcastTron((signedTransaction as SignedTronTransaction).signedTransaction);
-    case 'ALG':
-      return broadcastAlgorand((signedTransaction as SignedAlgorandTransaction).signedTransactionsBase64);
     case 'STX':
       return broadcastStacks((signedTransaction as SignedStacksTransaction).signedTransactionHex);
     case 'SRB':
       return broadcastSoroban((signedTransaction as SignedSorobanTransaction).signedTransactionXdr);
-    case 'SUI':
-      return broadcastSui((signedTransaction as SignedSuiTransaction).signedTransaction);
     default:
       throw new Error(`Unsupported chain family ${(signedTransaction as { chainFamily: string }).chainFamily}.`);
   }

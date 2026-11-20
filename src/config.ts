@@ -7,7 +7,6 @@ const configSchema = z.object({
   ALLBRIDGE_API_BASE_URL: z.string().url().default('http://127.0.0.1:3000'),
   ALLBRIDGE_API_TIMEOUT_MS: z.coerce.number().int().positive().default(20_000),
   ALLBRIDGE_EXPLORER_API_BASE_URL: z.string().url().default('https://explorer.api.allbridgecoreapi.net'),
-  ALLBRIDGE_NEXT_API_BASE_URL: z.string().url().default('https://api.next.allbridge.io'),
   MCP_AUTH_MODE: z.enum(['none', 'bearer', 'oauth']).default('none'),
   MCP_TRANSPORT: z.enum(['stdio', 'streamable-http']).default('stdio'),
   MCP_HOST: z.string().trim().min(1).default('0.0.0.0'),
@@ -63,16 +62,6 @@ const configSchema = z.object({
     },
     z.string().url().optional(),
   ),
-  ALLBRIDGE_ALG_RPC_URL: z.preprocess(
-    (value) => {
-      if (typeof value !== 'string') {
-        return undefined;
-      }
-      const trimmed = value.trim();
-      return trimmed === '' ? undefined : trimmed;
-    },
-    z.string().url().optional(),
-  ),
   ALLBRIDGE_STX_RPC_URL: z.preprocess(
     (value) => {
       if (typeof value !== 'string') {
@@ -94,16 +83,6 @@ const configSchema = z.object({
     z.string().url().optional(),
   ),
   ALLBRIDGE_SRB_NETWORK_PASSPHRASE: z.string().optional(),
-  ALLBRIDGE_SUI_RPC_URL: z.preprocess(
-    (value) => {
-      if (typeof value !== 'string') {
-        return undefined;
-      }
-      const trimmed = value.trim();
-      return trimmed === '' ? undefined : trimmed;
-    },
-    z.string().url().optional(),
-  ),
 });
 
 export type AppConfig = z.infer<typeof configSchema>;

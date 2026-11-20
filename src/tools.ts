@@ -8,11 +8,8 @@ import {
   FEE_PAYMENT_METHODS,
   MESSENGERS,
   OUTPUT_FORMATS,
-  TOKEN_TYPES,
 } from './constants.js';
 import { AllbridgeApiError, type AllbridgeApiClient } from './allbridge-api-client.js';
-import { NextApiError, type NextApiClient } from './next-api-client.js';
-import { planNextTransfer } from './next-tools.js';
 import {
   AllbridgeExplorerApiError,
   type AllbridgeExplorerApiClient,
@@ -39,7 +36,6 @@ import type { SignedTransaction } from './transaction-types.js';
 import type { TokenWithChainDetails } from './types.js';
 import { baseUnitsToDecimal, decimalToBaseUnits, formatJson } from './utils.js';
 
-const tokenTypeSchema = z.enum(TOKEN_TYPES);
 const messengerSchema = z.enum(MESSENGERS);
 const feePaymentMethodSchema = z.enum(FEE_PAYMENT_METHODS);
 const amountUnitSchema = z.enum(AMOUNT_UNITS);
@@ -99,12 +95,6 @@ const tronSignedTransactionSchema = z.object({
   signedTransaction: z.record(z.unknown()),
 });
 
-const algSignedTransactionSchema = z.object({
-  chainFamily: z.literal('ALG'),
-  walletId: z.string().trim().min(1).optional(),
-  signedTransactionsBase64: z.array(z.string().trim().min(1)).min(1),
-});
-
 const stxSignedTransactionSchema = z.object({
   chainFamily: z.literal('STX'),
   walletId: z.string().trim().min(1).optional(),
@@ -117,33 +107,21 @@ const srbSignedTransactionSchema = z.object({
   signedTransactionXdr: z.string().trim().min(1),
 });
 
-const suiSignedTransactionSchema = z.object({
-  chainFamily: z.literal('SUI'),
-  walletId: z.string().trim().min(1).optional(),
-  signedTransaction: z.object({
-    bytesBase64: z.string().trim().min(1),
-    signature: z.string().trim().min(1),
-  }),
-});
-
 const signedTransactionSchema = z.discriminatedUnion('chainFamily', [
   evmSignedTransactionSchema,
   solanaSignedTransactionSchema,
   tronSignedTransactionSchema,
-  algSignedTransactionSchema,
   stxSignedTransactionSchema,
   srbSignedTransactionSchema,
-  suiSignedTransactionSchema,
 ]);
 
 const signedTransactionInputSchema = {
-  chainFamily: z.enum(['EVM', 'SOLANA', 'TRX', 'ALG', 'STX', 'SRB', 'SUI']).describe('Chain family for the signed transaction.'),
+  chainFamily: z.enum(['EVM', 'SOLANA', 'TRX', 'STX', 'SRB']).describe('Chain family for the signed transaction.'),
   chainId: z.number().int().positive().optional().describe('Required for EVM transactions.'),
   chainSymbol: z.string().trim().min(1).optional().describe('Optional EVM chain symbol.'),
   walletId: z.string().trim().min(1).optional().describe('Optional wallet selector.'),
-  signedTransaction: z.unknown().optional().describe('Signed transaction payload for EVM, Tron, or Sui.'),
+  signedTransaction: z.unknown().optional().describe('Signed transaction payload for EVM or Tron.'),
   signedTransactionHex: z.string().trim().min(1).optional().describe('Signed transaction hex payload for Solana, Stacks, or Soroban.'),
-  signedTransactionsBase64: z.array(z.string().trim().min(1)).optional().describe('Signed transaction base64 payloads for Algorand.'),
   signedTransactionXdr: z.string().trim().min(1).optional().describe('Signed transaction XDR payload for Soroban / Stellar.'),
 };
 
@@ -176,11 +154,7 @@ function normalizeAmount(amount: string, unit: z.infer<typeof amountUnitSchema>,
 }
 
 function detectMessengers(sourceToken: TokenWithChainDetails, destinationToken: TokenWithChainDetails): string[] {
-  const messengers = ['ALLBRIDGE'];
-
-  if (sourceToken.cctpAddress && destinationToken.cctpAddress) {
-    messengers.push('CCTP');
-  }
+  const messengers: string[] = [];
 
   if (sourceToken.cctpV2Address && destinationToken.cctpV2Address) {
     messengers.push('CCTP_V2');
@@ -305,11 +279,11 @@ type WalletSelectorHint = {
 
 type DestinationSetupRequirement = {
   required: boolean;
-  chainFamily: 'ALG' | 'SRB' | null;
+  chainFamily: 'SRB' | null;
   chainSymbol: string | null;
   accountAddress: string;
-  checkTool: 'check_algorand_optin' | 'check_stellar_trustline' | null;
-  buildTool: 'build_algorand_optin_transaction' | 'build_stellar_trustline_transaction' | null;
+  checkTool: 'check_stellar_trustline' | null;
+  buildTool: 'build_stellar_trustline_transaction' | null;
   reason: string | null;
 };
 
@@ -457,26 +431,6 @@ async function detectDestinationSetupRequirement(
     }
   }
 
-  if (destinationToken.chainType === 'ALG') {
-    const optedIn = await client.checkAlgorandOptIn({
-      sender: recipientAddress,
-      id: destinationToken.tokenAddress,
-      type: 'asset',
-    });
-
-    return {
-      required: !optedIn,
-      chainFamily: 'ALG',
-      chainSymbol: destinationToken.chainSymbol,
-      accountAddress: recipientAddress,
-      checkTool: 'check_algorand_optin',
-      buildTool: 'build_algorand_optin_transaction',
-      reason: optedIn
-        ? 'The destination account is already opted into this Algorand asset.'
-        : 'The destination account must opt into this Algorand asset before it can receive the transfer.',
-    };
-  }
-
   return null;
 }
 
@@ -502,7 +456,7 @@ function summarizePlan(
           sourceToken,
           destinationToken,
           amount,
-          messenger: String(recommendedOption.messenger ?? 'ALLBRIDGE'),
+          messenger: String(recommendedOption.messenger),
         })
       : null,
     route: {
@@ -932,7 +886,6 @@ export function registerAllbridgeTools(
   client: AllbridgeApiClient,
   explorerClient: AllbridgeExplorerApiClient,
   dependencies: ToolDependencies = defaultDependencies,
-  nextClient?: NextApiClient,
 ): void {
   type ToolResult = {
     content: Array<{ type: 'text'; text: string }>;
@@ -1183,10 +1136,20 @@ export function registerAllbridgeTools(
         };
       }));
 
-    const canProceed = checks.every((check) => check.satisfied === true);
-    const nextAction = canProceed
-      ? 'Balances are sufficient. You can call create_bridge_execution_job now.'
-      : 'Top up the insufficient balance(s) and rerun check_sender_balances before create_bridge_execution_job.';
+      const requiredBalances: BridgeBalanceRequirement[] = checks.map((check) => ({
+        kind: check.kind,
+        label: check.label,
+        chainSymbol: check.chainSymbol,
+        tokenAddress: check.tokenAddress,
+        requiredBaseUnits: check.requiredBaseUnits,
+        availableBaseUnits: check.availableBaseUnits,
+        availableHumanUnits: check.availableHumanUnits,
+        satisfied: check.satisfied,
+      }));
+      const canProceed = requiredBalances.every((check) => check.satisfied === true);
+      const nextAction = canProceed
+        ? 'Balances are sufficient. You can call create_bridge_execution_job now.'
+        : 'Top up the insufficient balance(s) and rerun check_sender_balances before create_bridge_execution_job.';
 
       const result: BridgeBalanceValidation = {
         sourceToken: summarizeToken(args.sourceToken),
@@ -1194,7 +1157,7 @@ export function registerAllbridgeTools(
         amount: args.amount,
         messenger: args.messenger,
         feePaymentMethod: args.feePaymentMethod,
-        requiredBalances: checks,
+        requiredBalances,
         canProceed,
         nextAction,
       };
@@ -1313,18 +1276,16 @@ export function registerAllbridgeTools(
     destinationChain?: string | null;
     amount: string;
     amountUnit: z.infer<typeof amountUnitSchema>;
-    tokenType: z.infer<typeof tokenTypeSchema>;
     sourceTokenSymbol: string;
     sourceTokenAddress?: string | null;
     destinationTokenSymbol?: string | null;
     destinationTokenAddress?: string | null;
   }): Promise<Record<string, unknown>> {
-    const catalog = await loadChainCatalog(client, parsed.tokenType);
+    const catalog = await loadChainCatalog(client);
     const sourceTokenSymbol = requireText(parsed.sourceTokenSymbol, 'sourceTokenSymbol');
     const source = resolveTokenForChain(
       catalog,
       optionalText(parsed.sourceChain),
-      parsed.tokenType,
       optionalText(parsed.sourceTokenAddress),
       sourceTokenSymbol,
       {
@@ -1336,7 +1297,6 @@ export function registerAllbridgeTools(
     const destination = resolveTokenForChain(
       catalog,
       optionalText(parsed.destinationChain),
-      parsed.tokenType,
       optionalText(parsed.destinationTokenAddress),
       optionalText(parsed.destinationTokenSymbol) ?? sourceTokenSymbol,
       {
@@ -1351,136 +1311,24 @@ export function registerAllbridgeTools(
     return summarizePlan(source.token, destination.token, amount, quote) as unknown as Record<string, unknown>;
   }
 
-  async function runNextPlan(parsed: {
-    sourceChain?: string | null;
-    destinationChain?: string | null;
-    amount: string;
-    amountUnit: z.infer<typeof amountUnitSchema>;
-    sourceTokenSymbol: string;
-    sourceTokenAddress?: string | null;
-    destinationTokenSymbol?: string | null;
-    destinationTokenAddress?: string | null;
-  }): Promise<Record<string, unknown>> {
-    if (!nextClient) {
-      throw new UserFacingToolError(
-        'validation_error',
-        'Allbridge NEXT client is not configured for this server.',
-        {},
-      );
-    }
-    const result = await planNextTransfer(nextClient, {
-      sourceChain: requireText(parsed.sourceChain, 'sourceChain'),
-      destinationChain: requireText(parsed.destinationChain, 'destinationChain'),
-      sourceTokenSymbol: requireText(parsed.sourceTokenSymbol, 'sourceTokenSymbol'),
-      destinationTokenSymbol: optionalText(parsed.destinationTokenSymbol),
-      sourceTokenAddress: optionalText(parsed.sourceTokenAddress),
-      destinationTokenAddress: optionalText(parsed.destinationTokenAddress),
-      amount: requireText(parsed.amount, 'amount'),
-      amountUnit: parsed.amountUnit,
-    });
-    return result as unknown as Record<string, unknown>;
-  }
-
-  function serializePlanError(err: unknown): { code: string; message: string; details: unknown } {
-    if (err instanceof UserFacingToolError) {
-      return { code: err.code, message: err.message, details: err.details ?? null };
-    }
-    if (err instanceof AllbridgeApiError || err instanceof NextApiError) {
-      return {
-        code: 'validation_error',
-        message: err.message,
-        details: err.details ?? null,
-      };
-    }
-    return {
-      code: 'validation_error',
-      message: err instanceof Error ? err.message : String(err),
-      details: null,
-    };
-  }
-
   server.registerTool(
     'plan_bridge_transfer',
     {
-      title: 'Plan Bridge Transfer (Core + NEXT)',
+      title: 'Plan Bridge Transfer',
       description:
-        'Primary tool for planning a cross-chain transfer. By default returns options from BOTH Allbridge Core and Allbridge NEXT side by side; pass protocol="core" or protocol="next" to query only one. Requires sourceChain, destinationChain, sourceTokenSymbol, and amount. Use token addresses when the selected chain has more than one token with the same symbol. Use destinationTokenSymbol only when the destination chain uses a different symbol. Response always wrapped as { protocols, core, next, errors }.',
+        'Primary tool for planning a cross-chain transfer through Allbridge Core. Requires sourceChain, destinationChain, sourceTokenSymbol, and amount. Use token addresses when the selected chain has more than one token with the same symbol. Use destinationTokenSymbol only when the destination chain uses a different symbol.',
       inputSchema: {
         sourceChain: requiredChainSchema(),
         destinationChain: requiredChainSchema(),
         amount: requiredTextSchema('Bridge amount. Do not pass null.'),
         amountUnit: amountUnitSchema.default('human'),
-        tokenType: tokenTypeSchema.default('swap').describe('Core token type (swap | pool | yield). Ignored by NEXT.'),
         sourceTokenSymbol: requiredTextSchema('Source token symbol (e.g., USDC, ETH).'),
         sourceTokenAddress: optionalTextSchema('Optional exact source token address. Use when the source chain has multiple tokens with the same symbol.'),
         destinationTokenSymbol: optionalTextSchema('Optional destination token symbol. Defaults to the source symbol.'),
         destinationTokenAddress: optionalTextSchema('Optional exact destination token address. Use when the destination chain has multiple tokens with the same symbol.'),
-        protocol: z
-          .enum(['core', 'next', 'auto'])
-          .default('auto')
-          .describe('Which Allbridge protocol to query. "auto" runs both in parallel and returns whichever succeeds.'),
       },
     },
-    async (parsed) => {
-      const protocol = parsed.protocol;
-
-      if (protocol === 'core') {
-        return runTool(async () => {
-          const core = await runCorePlan(parsed);
-          return { protocols: ['core'], core, next: null, errors: null };
-        });
-      }
-
-      if (protocol === 'next') {
-        return runTool(async () => {
-          const next = await runNextPlan(parsed);
-          return { protocols: ['next'], core: null, next, errors: null };
-        });
-      }
-
-      // auto. If NEXT client is not configured, silently degrade to core-only —
-      // the caller did not opt into NEXT, so an infrastructure miss should not
-      // surface as an error.
-      if (!nextClient) {
-        return runTool(async () => {
-          const core = await runCorePlan(parsed);
-          return { protocols: ['core'], core, next: null, errors: null };
-        });
-      }
-
-      // run both, never throw if at least one succeeds
-      const [coreSettled, nextSettled] = await Promise.allSettled([
-        runCorePlan(parsed),
-        runNextPlan(parsed),
-      ]);
-
-      const errors: { core?: ReturnType<typeof serializePlanError>; next?: ReturnType<typeof serializePlanError> } = {};
-      const core = coreSettled.status === 'fulfilled' ? coreSettled.value : null;
-      const next = nextSettled.status === 'fulfilled' ? nextSettled.value : null;
-      if (coreSettled.status === 'rejected') {
-        errors.core = serializePlanError(coreSettled.reason);
-      }
-      if (nextSettled.status === 'rejected') {
-        errors.next = serializePlanError(nextSettled.reason);
-      }
-
-      if (!core && !next) {
-        return errorResult(
-          new UserFacingToolError(
-            'validation_error',
-            'Both Core and NEXT planners failed.',
-            errors,
-          ),
-        );
-      }
-
-      return textResult({
-        protocols: ['core', 'next'],
-        core,
-        next,
-        errors: Object.keys(errors).length > 0 ? errors : null,
-      });
-    },
+    async (parsed) => runTool(async () => runCorePlan(parsed)),
   );
 
   server.registerTool(
@@ -1492,7 +1340,6 @@ export function registerAllbridgeTools(
       inputSchema: {
         sourceChain: requiredChainSchema(),
         destinationChain: requiredChainSchema(),
-        tokenType: tokenTypeSchema.default('swap'),
         sourceTokenSymbol: requiredTextSchema('Source stablecoin symbol.'),
         sourceTokenAddress: optionalTextSchema('Optional exact source token address. Use when the source chain has multiple tokens with the same symbol.'),
         destinationTokenSymbol: optionalTextSchema('Optional destination stablecoin symbol.'),
@@ -1501,12 +1348,11 @@ export function registerAllbridgeTools(
     },
     async (parsed) => {
       return runTool(async () => {
-        const catalog = await loadChainCatalog(client, parsed.tokenType);
+        const catalog = await loadChainCatalog(client);
         const sourceTokenSymbol = requireText(parsed.sourceTokenSymbol, 'sourceTokenSymbol');
         const source = resolveTokenForChain(
           catalog,
           optionalText(parsed.sourceChain),
-          parsed.tokenType,
           optionalText(parsed.sourceTokenAddress),
           sourceTokenSymbol,
           {
@@ -1518,7 +1364,6 @@ export function registerAllbridgeTools(
         const destination = resolveTokenForChain(
           catalog,
           optionalText(parsed.destinationChain),
-          parsed.tokenType,
           optionalText(parsed.destinationTokenAddress),
           optionalText(parsed.destinationTokenSymbol) ?? sourceTokenSymbol,
           {
@@ -1571,12 +1416,14 @@ export function registerAllbridgeTools(
           options: summarizeQuoteOptions(quote, destinationToken),
           bridgePortalName: 'Allbridge Core',
           bridgePortalUrl,
-          bridgePortalDeepLink: buildBridgePortalDeepLink({
-            sourceToken,
-            destinationToken,
-            amount,
-            messenger: String(quote.options[0]?.messenger ?? 'ALLBRIDGE'),
-          }),
+          bridgePortalDeepLink: quote.options[0]
+            ? buildBridgePortalDeepLink({
+                sourceToken,
+                destinationToken,
+                amount,
+                messenger: String(quote.options[0].messenger),
+              })
+            : null,
         };
       });
     },
@@ -1588,15 +1435,12 @@ export function registerAllbridgeTools(
       title: 'List Supported Chains',
       description:
         'List the bridge chains and chain aliases currently supported by the Allbridge token catalog. Use this first when the user has not yet chosen a destination chain.',
-      inputSchema: {
-        tokenType: tokenTypeSchema.default('swap'),
-      },
+      inputSchema: {},
     },
     async (parsed) => runTool(async () => {
-      const catalog = await loadChainCatalog(client, parsed.tokenType);
+      const catalog = await loadChainCatalog(client);
 
       return {
-        tokenType: parsed.tokenType,
         chains: summarizeSupportedChains(catalog),
         nextAction: 'Use one of the returned chainSymbol values or aliases in plan_bridge_transfer and find_bridge_routes.',
       };
@@ -1610,15 +1454,13 @@ export function registerAllbridgeTools(
       description:
         'List the supported bridge tokens for a chain. Use this after the source chain is known to choose the stablecoin before planning the bridge.',
       inputSchema: {
-        tokenType: tokenTypeSchema.default('swap'),
         chain: optionalChainSchema(),
       },
     },
     async (parsed) => runTool(async () => {
-      const catalog = await loadChainCatalog(client, parsed.tokenType);
+      const catalog = await loadChainCatalog(client);
       if (parsed.chain === null || parsed.chain === undefined || (typeof parsed.chain === 'string' && parsed.chain.trim() === '')) {
         return {
-          tokenType: parsed.tokenType,
           chains: catalog.chains.map((chain) => ({
             chainSymbol: chain.chainSymbol,
             chainName: chain.chainName,
@@ -1630,7 +1472,6 @@ export function registerAllbridgeTools(
 
       const chain = resolveChainFromCatalog(catalog, parsed.chain, 'chain');
       return {
-        tokenType: parsed.tokenType,
         chain: {
           chainSymbol: chain.chainSymbol,
           chainName: chain.chainName,
@@ -1685,7 +1526,7 @@ export function registerAllbridgeTools(
     {
       title: 'Create Bridge Execution Job',
       description:
-        'Create an ordered bridge execution job with explicit signing steps for an external wallet or signer. Use after the bridge route and quote are known. Balance validation is returned as advisory data, not a hard stop. Works for all supported source chain families, including EVM, Solana, Tron, Algorand, Stacks, Soroban/Stellar, and Sui.',
+        'Create an ordered bridge execution job with explicit signing steps for an external wallet or signer. Use after the bridge route and quote are known. Balance validation is returned as advisory data, not a hard stop. Works for all supported source chain families: EVM, Solana, Tron, Stacks, and Stellar.',
       inputSchema: {
         sourceTokenAddress: requiredTextSchema('Source token address. Do not pass null.'),
         destinationTokenAddress: requiredTextSchema('Destination token address. Do not pass null.'),
@@ -1888,103 +1729,6 @@ export function registerAllbridgeTools(
               accountAddress: parsed.accountAddress ?? null,
               tokenAddress: parsed.tokenAddress ?? null,
               limit: parsed.limit ?? null,
-              reason: error.message,
-              status: error.status ?? null,
-              details: error.details ?? null,
-            });
-          }
-
-          throw error;
-        }
-      });
-    },
-  );
-
-  server.registerTool(
-    'check_algorand_optin',
-    {
-      title: 'Check Algorand Opt-In',
-      description:
-        'Check whether an Algorand account is already opted into the given asset or app.',
-      inputSchema: {
-        accountAddress: requiredTextSchema('Algorand account address. Do not pass null.'),
-        id: requiredTextSchema('Asset or app id. Do not pass null.'),
-        type: z.enum(['asset', 'app']).default('asset'),
-      },
-    },
-    async (parsed) => {
-      return runTool(async () => {
-        try {
-          const accountAddress = requireText(parsed.accountAddress, 'accountAddress');
-          const id = requireText(parsed.id, 'id');
-          const optedIn = await client.checkAlgorandOptIn({
-            sender: accountAddress,
-            id,
-            type: parsed.type,
-          });
-
-          return {
-            accountAddress,
-            id,
-            type: parsed.type,
-            required: !optedIn,
-            nextAction: optedIn
-              ? 'The account is already opted into this Algorand asset or app.'
-              : 'Create an Algorand opt-in transaction before sending this asset to the account.',
-          };
-        } catch (error) {
-          if (error instanceof AllbridgeApiError) {
-            throw new UserFacingToolError('validation_error', 'Unable to check the Algorand opt-in state.', {
-              accountAddress: parsed.accountAddress ?? null,
-              id: parsed.id ?? null,
-              type: parsed.type ?? null,
-              reason: error.message,
-              status: error.status ?? null,
-              details: error.details ?? null,
-            });
-          }
-
-          throw error;
-        }
-      });
-    },
-  );
-
-  server.registerTool(
-    'build_algorand_optin_transaction',
-    {
-      title: 'Build Algorand Opt-In Transaction',
-      description:
-        'Build an Algorand opt-in transaction for a recipient account.',
-      inputSchema: {
-        accountAddress: requiredTextSchema('Algorand account address. Do not pass null.'),
-        id: requiredTextSchema('Asset or app id. Do not pass null.'),
-        type: z.enum(['asset', 'app']).default('asset'),
-      },
-    },
-    async (parsed) => {
-      return runTool(async () => {
-        try {
-          const accountAddress = requireText(parsed.accountAddress, 'accountAddress');
-          const id = requireText(parsed.id, 'id');
-          const transaction = await client.buildAlgorandOptInTransaction({
-            sender: accountAddress,
-            id,
-            type: parsed.type,
-          });
-
-          return {
-            accountAddress,
-            id,
-            type: parsed.type,
-            transaction,
-          };
-        } catch (error) {
-          if (error instanceof AllbridgeApiError) {
-            throw new UserFacingToolError('validation_error', 'Unable to build the Algorand opt-in transaction.', {
-              accountAddress: parsed.accountAddress ?? null,
-              id: parsed.id ?? null,
-              type: parsed.type ?? null,
               reason: error.message,
               status: error.status ?? null,
               details: error.details ?? null,
