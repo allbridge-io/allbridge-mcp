@@ -108,7 +108,7 @@ docker run --rm -p 3000:3000 \
   -e MCP_PORT=3000 \
   -e MCP_AUTH_MODE=bearer \
   -e MCP_BEARER_TOKEN=replace-me \
-  -e ALLBRIDGE_API_BASE_URL=http://host.docker.internal:3000 \
+  -e ALLBRIDGE_ETH_RPC_URL=https://your-eth-rpc.example.com \
   allbridge/io.allbridge.mcp:latest
 ```
 
@@ -123,5 +123,5 @@ docker run --rm -p 3000:3000 \
 ## Security Notes
 
 - HTTP mode with `MCP_AUTH_MODE=none` on a public interface is unsafe. Bind to `127.0.0.1` or require auth.
-- `allbridge-mcp` itself does not hold signing keys, so leaking an access token only exposes REST API calls through the MCP, not private keys. Local signing keys live in [`local-signer-mcp`](https://github.com/allbridge-io/local-signer-mcp).
+- `allbridge-mcp` itself does not hold signing keys, so leaking an access token only exposes Allbridge Core API calls and your configured RPCs through the MCP, not private keys. Local signing keys live in [`local-signer-mcp`](https://github.com/allbridge-io/local-signer-mcp).
 - Broadcast endpoints require a reachable RPC per family. Do not advertise those RPC URLs as trusted; the server calls them outbound only.

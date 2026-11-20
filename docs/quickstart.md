@@ -1,6 +1,6 @@
 # Quickstart
 
-This page gets `allbridge-mcp` running against a local REST API in under a minute. It assumes you already have Node.js 20+ and `pnpm` installed.
+This page gets `allbridge-mcp` running against the public Allbridge Core API. It assumes Node.js 22.12+ and `pnpm`.
 
 ## 1. Install and build
 
@@ -9,13 +9,18 @@ pnpm install
 pnpm build
 ```
 
-## 2. Point at the REST API
+## 2. Configure RPCs (recommended)
 
-By default the server calls `http://127.0.0.1:3000`. If your Allbridge REST API is elsewhere, copy `.env.example` to `.env` and set:
+The server works out of the box with public RPC endpoints, but they are rate limited. Copy `.env.example` to `.env` and set your own RPC for the chains you use:
 
 ```env
-ALLBRIDGE_API_BASE_URL=https://your-allbridge-rest-api.example
+ALLBRIDGE_ETH_RPC_URL=https://your-eth-rpc.example.com
+ALLBRIDGE_ARB_RPC_URL=https://your-arb-rpc.example.com
+ALLBRIDGE_SOL_RPC_URL=https://your-solana-rpc.example.com
+ALLBRIDGE_TRX_RPC_URL=https://your-tron-rpc.example.com
 ```
+
+See [Configuration](./configuration.md) for the full list.
 
 ## 3. Start the server
 
@@ -30,93 +35,39 @@ The process runs on `stdio`, which is what local MCP clients expect.
 ### Claude Code
 
 ```bash
-claude mcp add allbridge \
-  --env ALLBRIDGE_API_BASE_URL=http://127.0.0.1:3000 \
-  -- node /absolute/path/to/allbridge-mcp/dist/index.js
+claude mcp add allbridge -- node /absolute/path/to/allbridge-mcp/dist/index.js
 ```
 
 ### Cursor
-
-Save as `~/.cursor/mcp.json` (user-wide) or as `.cursor/mcp.json` in the project:
 
 ```json
 {
   "mcpServers": {
     "allbridge": {
       "command": "node",
-      "args": ["dist/index.js"],
-      "cwd": "/absolute/path/to/allbridge-mcp",
-      "env": {
-        "ALLBRIDGE_API_BASE_URL": "http://127.0.0.1:3000"
-      }
-    }
-  }
-}
-```
-
-### Claude Desktop
-
-`Settings → Developer → Local MCP servers → Edit Config`, then merge this entry into `mcpServers`:
-
-```json
-{
-  "mcpServers": {
-    "allbridge": {
-      "command": "/absolute/path/to/node",
       "args": ["/absolute/path/to/allbridge-mcp/dist/index.js"],
       "env": {
-        "ALLBRIDGE_API_BASE_URL": "http://127.0.0.1:3000"
+        "ALLBRIDGE_ETH_RPC_URL": "https://your-eth-rpc.example.com"
       }
     }
   }
 }
 ```
 
-Use an absolute path to the Node binary if you manage versions with `nvm`, `asdf`, or `volta`. GUI clients do not inherit your shell PATH.
+More clients: [Client Integrations](./client-integrations.md).
 
-## 5. First calls from an agent
+## 5. Try it
 
-Once the server is registered, the agent can start with:
+Ask the agent:
 
-```json
-{
-  "name": "plan_bridge_transfer",
-  "arguments": {
-    "sourceChain": "ETH",
-    "destinationChain": "SOL",
-    "amount": "1",
-    "amountUnit": "human",
-    "tokenType": "swap",
-    "sourceTokenSymbol": "USDC"
-  }
-}
-```
+> How much USDC would I receive on Arbitrum if I send 100 USDC from Ethereum?
 
-See the full walk-through in [`examples/tool-usage.md`](../examples/tool-usage.md).
+The agent calls `plan_bridge_transfer` and compares the messengers. To execute a transfer, add [`local-signer-mcp`](https://github.com/allbridge-io/local-signer-mcp) and follow [Bridge Workflow](./bridge-workflow.md).
 
-## Running in HTTP Mode
-
-If the client needs a URL instead of a local process:
+## 6. Inspect the tools
 
 ```bash
-MCP_TRANSPORT=streamable-http \
-MCP_HOST=0.0.0.0 \
-MCP_PORT=3000 \
-pnpm start
+pnpm inspect
 ```
 
-Add auth with `MCP_AUTH_MODE=bearer` (plus `MCP_BEARER_TOKEN`) or `MCP_AUTH_MODE=oauth` when the client requires discovery. Details in [`transport-and-auth.md`](./transport-and-auth.md).
-
-## Docker
-
-```bash
-docker build -t allbridge-mcp .
-docker run --rm -p 3000:3000 \
-  -e MCP_TRANSPORT=streamable-http \
-  -e MCP_HOST=0.0.0.0 \
-  -e MCP_PORT=3000 \
-  -e ALLBRIDGE_API_BASE_URL=http://host.docker.internal:3000 \
-  allbridge-mcp
-```
-
-Published image: `allbridge/io.allbridge.mcp:latest`.
+Opens the MCP Inspector with live input and output schemas.

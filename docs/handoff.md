@@ -1,103 +1,128 @@
-# Handoff Model
+# Execution Job Contract (v2)
 
-`allbridge-mcp` never signs. `local-signer-mcp` never plans. The handoff model lets a client move a step from one to the other deterministically.
+`create_bridge_execution_job` returns a job that tells the client exactly what to sign, in which order, and with which wallet. `allbridge-mcp` never signs; `local-signer-mcp` never plans. The contract is validated by `validateBridgeExecutionJobContract` in [`src/execution-job-contract.ts`](../src/execution-job-contract.ts).
 
-## What the Agent Receives
-
-Every step returned by `create_bridge_execution_job` carries a `handoff` block:
+## Shape
 
 ```json
 {
-  "handoff": {
-    "executionTarget": "local-signer-mcp",
-    "executionTool": "sign_and_broadcast_transaction",
-    "broadcastTarget": "allbridge-mcp",
-    "broadcastTool": "broadcast_signed_transaction",
-    "walletSelector": {
-      "chainFamily": "EVM",
-      "chainSymbol": "ETH",
-      "chainId": 1,
-      "walletId": "MAINNET"
-    },
-    "transactionShape": {
-      "format": "unsignedEvmTransaction"
-    }
-  }
+  "jobId": "4f2c…",
+  "kind": "bridge_transfer",
+  "version": "v2",
+  "mode": "external_signer",
+  "status": "awaiting_signature",
+  "summary": "Bridge 10 USDC from ETH to ARB to 0x2222…",
+  "route": { "source": { … }, "destination": { … }, "messenger": "CCTP_V2", "feePaymentMethod": "WITH_NATIVE_CURRENCY" },
+  "participants": { "senderAddress": "0x1111…", "recipientAddress": "0x2222…" },
+  "amount": { "amountInBaseUnits": "10000000", "amountInHumanUnits": "10" },
+  "quote": { "messenger": "CCTP_V2", "kind": "bridge", "amountToReceive": { … }, "feePaymentOptions": [ … ] },
+  "intent": null,
+  "balanceValidation": { "canProceed": true, "requiredBalances": [ … ], "notes": [ … ] },
+  "destinationSetup": null,
+  "handoff": { "executionTool": "sign_and_broadcast_transaction", "stepId": "approve", "stepCount": 2, "stepIds": ["approve", "bridge"], … },
+  "steps": [ … ],
+  "tracking": {
+    "sourceChain": "ETH",
+    "destinationChain": "ARB",
+    "transferStatusTool": "get_transfer_status",
+    "transferStatusArguments": { "sourceChain": "ETH", "txId": "<bridge step transaction hash>" },
+    "historyUrlTemplate": "https://core.allbridge.io/history/ETH/{txId}"
+  },
+  "nextAction": "…"
 }
 ```
 
-Field meanings:
+`status` is `requires_build` when the first step must be built first (LI.FI Intents from Solana), otherwise `awaiting_signature`.
 
-- `executionTarget` / `executionTool` — the server and tool that should own the next action. For unsigned steps this is `local-signer-mcp.sign_and_broadcast_transaction`.
-- `broadcastTarget` / `broadcastTool` — the fallback when only broadcasting is needed (the payload is already signed elsewhere). This is `allbridge-mcp.broadcast_signed_transaction`.
-- `walletSelector` — the hints the signer or broadcaster needs to pick a specific local wallet when multiple are configured.
-- `transactionShape` — the family-specific payload format the signer should expect.
+## Steps
 
-There is also a top-level `handoff` on the job itself that summarizes the primary execution target for the job as a whole.
+```json
+{
+  "id": "approve",
+  "order": 1,
+  "type": "sign_and_submit_transaction",
+  "status": "awaiting_signature",
+  "required": true,
+  "summary": "Approve USDC spending on ETH for CCTP_V2.",
+  "transactionFormat": "unsignedEvmTransaction",
+  "transaction": {
+    "chainFamily": "EVM",
+    "chainId": 1,
+    "chainSymbol": "ETH",
+    "from": "0x1111…",
+    "to": "0xA0b8…",
+    "data": "0x095ea7b3…",
+    "value": "0"
+  },
+  "build": null,
+  "waitForConfirmation": true,
+  "handoff": { "stepId": "approve", "nextStepId": "bridge", … },
+  "nextOnSuccess": "bridge"
+}
+```
 
-## Two Valid Paths
+- `id` — `reset_allowance`, `approve` or `bridge`.
+- `status` — `awaiting_signature` for the first step, `blocked` for later ones, `requires_build` for a first step without a transaction.
+- `transaction` — the unsigned transaction, ready for `local-signer-mcp` `sign_and_broadcast_transaction`; `null` when the step has a `build` block.
+- `build` — `{ tool, arguments, reason }`: call `tool` with `arguments` right before signing to get the transaction (`create_lifi_intents_order`).
+- `waitForConfirmation` — wait for the transaction to confirm before the next step.
 
-### Path A — full local flow
+### Transaction formats
 
-1. `allbridge-mcp.create_bridge_execution_job` returns the next step.
-2. The client forwards the step to `local-signer-mcp.sign_and_broadcast_transaction`.
-3. `local-signer-mcp` signs, broadcasts, and returns `txHash`.
-4. `allbridge-mcp.get_transfer_status` takes over from `txHash`.
+| `transactionFormat` | `transaction` |
+|---------------------|---------------|
+| `unsignedEvmTransaction` | `chainFamily: "EVM"`, `chainId`, `chainSymbol`, `from`, `to`, `data`, `value` (wei, decimal) |
+| `serializedSolanaTransactionHex` | `chainFamily: "SOLANA"`, `serializedTransactionHex` (versioned transaction) |
+| `tronRawTransaction` | `chainFamily: "TRX"`, `rawTransaction` (TronWeb transaction object) |
+| `serializedStacksTransactionHex` | `chainFamily: "STX"`, `serializedTransactionHex` |
+| `stellarTransactionXdr` | `chainFamily: "SRB"`, `serializedTransactionXdr` |
 
-This is the default local recommendation: `stdio` signer next to an `stdio` or HTTP bridge MCP.
+When `walletId` is passed to `create_bridge_execution_job`, every transaction carries it so the signer picks that wallet.
 
-### Path B — external signer, Allbridge broadcast
+## Handoff
 
-1. `allbridge-mcp.create_bridge_execution_job` returns the next step.
-2. The client sends the step to whatever external signer owns the key (hardware wallet, mobile wallet, remote HSM).
-3. The external signer returns a signed payload.
-4. The client calls `allbridge-mcp.broadcast_signed_transaction` with that payload.
-5. `allbridge-mcp.get_transfer_status` takes over from `txHash`.
+Each step and the job carry a `handoff` block:
 
-Use this path when the key lives somewhere `local-signer-mcp` cannot reach.
+```json
+{
+  "executionTarget": "local-signer-mcp",
+  "executionTool": "sign_and_broadcast_transaction",
+  "executionAction": "sign_and_broadcast",
+  "broadcastTarget": "allbridge-mcp",
+  "broadcastTool": "broadcast_signed_transaction",
+  "broadcastAction": "broadcast",
+  "walletSelector": { "walletId": null, "senderAddress": "0x1111…", "chainFamily": "EVM", "chainSymbol": "ETH" },
+  "stepId": "approve",
+  "transactionFormat": "unsignedEvmTransaction",
+  "nextStepId": "bridge"
+}
+```
 
-## Wallet Selector
+Two valid paths:
 
-`walletSelector` is how the agent tells the signer which wallet to use when more than one is configured.
+- **Local signing** — send `transaction` to `local-signer-mcp` `sign_and_broadcast_transaction`; it returns the hash.
+- **External signing** — sign `transaction` with any wallet that understands the format, then call `allbridge-mcp` `broadcast_signed_transaction`.
 
-| Field | Meaning |
-|-------|---------|
-| `chainFamily` | `EVM`, `SOLANA`, `TRX`, `ALG`, `STX`, `SRB`, `SUI` |
-| `chainSymbol` | Optional chain short name for EVM routes |
-| `chainId` | Optional EVM chain id |
-| `walletId` | Local wallet slot id; matches the signer's env-var naming |
+## Intent
 
-When the source chain family exposes more than one wallet, always include `walletId`. The signer will refuse to guess.
+`intent` describes the intent messenger part of the job:
 
-Pass `walletId` as an input on `create_bridge_execution_job` to pin the entire job to a specific wallet up front.
+- NEAR Intents — `depositAddress`, `depositMemo`, `deadline`, `amountToSend`, `amountToReceive`, `minAmountToReceive`, and `submitDepositArguments` for `submit_near_intents_deposit`.
+- LI.FI Intents — `buildTool`, `minAmountToReceive`, `maxSlippagePercent`, `bridgeContract`.
 
 ## Destination Setup
 
-If the destination chain is Stellar or Algorand, a `destinationSetup` hint can appear next to the execution steps:
-
 ```json
 {
-  "destinationSetup": {
-    "required": true,
-    "type": "stellar_trustline",
-    "checkTool": "check_stellar_trustline",
-    "buildTool": "build_stellar_trustline_transaction"
-  }
+  "required": true,
+  "type": "stellar_trustline",
+  "chainSymbol": "SRB",
+  "accountAddress": "GA5Z…",
+  "tokenAddress": "CCW6…",
+  "checkTool": "check_stellar_trustline",
+  "buildTool": "build_stellar_trustline_transaction",
+  "reason": "The recipient must add a Stellar trustline for USDC before it can receive the transfer."
 }
 ```
 
-Follow the `checkTool` first. If it says a trustline or opt-in is missing, the recipient account holder needs to sign the output of `buildTool` before the bridge step can succeed.
-
-## Transaction Shape
-
-The `transactionShape` hint lets the signer avoid guessing at the payload layout:
-
-- `unsignedEvmTransaction` — EVM shape with from, to, data, gas hints, and nonce slot.
-- `serializedSolanaTransactionHex` — hex-encoded Solana transaction.
-- Analogous shapes for Tron, Algorand, Stacks, Soroban / Stellar, and Sui.
-
-The signer inspects `transactionShape.format` before choosing which signing code path to run.
-
-## One-Line Summary
-
-> `handoff` is the contract the two servers use to make sure every step has exactly one owner.
+`required: null` means the check itself failed (for example, the Stellar account does not exist yet). `type: "solana_token_account"` has no build tool: the recipient must create the token account themselves.

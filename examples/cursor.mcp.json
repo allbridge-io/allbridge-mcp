@@ -5,7 +5,7 @@
       "args": ["dist/index.js"],
       "cwd": "<path-to-allbridge-mcp>",
       "env": {
-        "ALLBRIDGE_API_BASE_URL": "http://127.0.0.1:3000"
+        "ALLBRIDGE_ETH_RPC_URL": "https://your-eth-rpc.example.com"
       }
     }
   }

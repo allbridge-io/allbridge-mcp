@@ -11,16 +11,9 @@ For more clients (Windsurf, Continue, Zed, Cline, Claude Desktop, Docker, remote
 
 ## Tool Usage Walk-Through
 
-- [`examples/tool-usage.md`](../examples/tool-usage.md) — annotated JSON request and response samples for:
-  1. Inspecting supported chains and tokens (`list_supported_chains`, `list_supported_tokens`)
-  2. Planning a bridge transfer (`plan_bridge_transfer`)
-  3. Creating an execution job (`create_bridge_execution_job`)
-  4. Tracking a transfer (`get_transfer_status`)
-  5. Broadcasting an already-signed EVM transaction (`broadcast_signed_transaction`)
-  6. Broadcasting an already-signed Solana transaction
-  7. Handing a step off to `local-signer-mcp` (`sign_and_broadcast_transaction`)
+- [`examples/tool-usage.md`](../examples/tool-usage.md) — request payloads for every tool: discovery, planning, execution (bridge, NEAR Intents, LI.FI Intents), recipient setup, broadcast and tracking.
+- [`docs/usage.md`](./usage.md) — end-to-end walkthroughs with live responses.
 
-Each block shows both the request payload and the expected output fields.
 
 ## Pairing With `local-signer-mcp`
 

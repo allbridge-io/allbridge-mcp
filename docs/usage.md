@@ -1,213 +1,180 @@
 # Usage
 
-End-to-end walkthrough for driving `allbridge-mcp` from an AI agent. The running example bridges **50 USDC from Ethereum to Solana** using `local-signer-mcp` to sign.
+End-to-end walkthrough for driving `allbridge-mcp` from an AI agent, with `local-signer-mcp` signing. The responses below are trimmed outputs of the live Core API.
 
-For configuration (env vars, transports, auth), see the [repo README](../README.md).
+Configure `local-signer-mcp` first: it needs a private key and RPC for the chain family you sign on (for EVM, `LOCAL_SIGNER_EVM_PRIVATE_KEY` and `LOCAL_SIGNER_EVM_RPC_URL`). See its README for the full variable matrix.
 
-If you pair this server with `local-signer-mcp`, configure the signer first. The signer reads its own `.env` file or client `env` block and needs a matching private key and RPC URL for the chain family you plan to sign on. For example, an EVM local setup uses `LOCAL_SIGNER_EVM_PRIVATE_KEY` and `LOCAL_SIGNER_EVM_RPC_URL`. For Docker, pass the same variables through `--env-file /absolute/path/to/local-signer.env`.
+## The flow
 
-## The five-step flow
+1. **Plan** — compare messengers for the amount.
+2. **Build** — create the execution job for the chosen messenger.
+3. **Sign and broadcast** — hand each step to `local-signer-mcp`.
+4. **Track** — check the transfer until it lands.
 
-1. **Plan** — pick a route and messenger.
-2. **Preflight** — verify sender balances and fees.
-3. **Build** — materialize an execution job with ready-to-sign steps.
-4. **Sign and broadcast** — hand each step to `local-signer-mcp`.
-5. **Track** — poll until the receive side lands.
+Intent messengers add one call: `create_lifi_intents_order` (LI.FI Intents, before signing) or `submit_near_intents_deposit` (NEAR Intents, optional, after broadcasting).
 
-Steps 1, 2, 3, and 5 are this server. Step 4 is the signer.
+## Example A — 100 USDC from Ethereum to Arbitrum
 
-## 1. Plan the route
+### 1. Plan
 
 ```json
 {
   "name": "plan_bridge_transfer",
-  "arguments": {
-    "sourceChain": "ETH",
-    "destinationChain": "SOL",
-    "sourceTokenSymbol": "USDC",
-    "amount": "50",
-    "amountUnit": "human"
-  }
+  "arguments": { "sourceChain": "Ethereum", "destinationChain": "Arbitrum", "sourceTokenSymbol": "USDC", "amount": "100" }
 }
 ```
-
-`plan_bridge_transfer` is **protocol-aware**. By default (`protocol: "auto"`) it queries Allbridge Core and Allbridge NEXT in parallel and returns:
 
 ```json
 {
-  "protocols": ["core", "next"],
-  "core": { "summary": "...", "route": {...}, "options": [...], "recommendedOption": {...}, "nextAction": "...", "bridgePortalUrl": "...", "...": "..." },
-  "next": { "summary": "...", "route": {...}, "options": [...], "bridgePortalUrl": "https://next.allbridge.io" },
-  "errors": null
+  "availableMessengers": ["CCTP_V2"],
+  "options": [
+    {
+      "messenger": "CCTP_V2",
+      "kind": "bridge",
+      "estimatedTimeMs": 120000,
+      "amountToReceive": { "inBaseUnits": "99885015", "inHumanUnits": "99.885015" },
+      "feePaymentOptions": [
+        { "feePaymentMethod": "WITH_NATIVE_CURRENCY", "fee": { "inHumanUnits": "0.000135346499447952", "asset": "native", "symbol": "ETH" }, "amountToReceive": { "inHumanUnits": "99.885015" } },
+        { "feePaymentMethod": "WITH_STABLECOIN", "fee": { "inHumanUnits": "0.239043", "asset": "source_token", "symbol": "USDC" }, "amountToReceive": { "inHumanUnits": "99.646247" } },
+        { "feePaymentMethod": "WITH_ABR", "fee": { "inHumanUnits": "1.912337760000003399", "asset": "abr", "symbol": "ABR" }, "amountToReceive": { "inHumanUnits": "99.885015" } }
+      ]
+    }
+  ],
+  "unavailableOptions": [],
+  "bridgePortalDeepLink": "https://core.allbridge.io/?f=ETH&t=ARB&ft=USDC&tt=USDC&send=100&messenger=CCTP_V2"
 }
 ```
 
-Pass `protocol: "core"` or `protocol: "next"` only when the user has explicitly pinned a protocol. In `auto` mode, partial failures land in `errors.core` / `errors.next`; the tool only fails outright when both protocols fail. If the server has no NEXT client configured, `auto` silently degrades to `["core"]`.
+The user picks `CCTP_V2` and pays the gas fee in USDC (deducted from the amount).
 
-If you don't know the symbols yet, call `list_supported_chains` / `list_supported_tokens` (Core) or `list_next_chains` / `list_next_tokens` (NEXT) first. For a direct route comparison or a cheaper slice, use `find_bridge_routes` or `quote_bridge_transfer` (Core) or `quote_next_swap` (NEXT).
-
-If a chain exposes more than one token with the same symbol, provide the exact token address on the planning call so the server does not have to guess between contracts.
-
-## 2. Preflight balances
-
-```json
-{
-  "name": "check_sender_balances",
-  "arguments": {
-    "sourceTokenAddress": "0xA0b8...eB48",
-    "destinationTokenAddress": "EPj...Dt1v",
-    "senderAddress": "0xSender...",
-    "recipientAddress": "SolRecipient...",
-    "amount": "50",
-    "amountUnit": "human",
-    "messenger": "ALLBRIDGE",
-    "feePaymentMethod": "WITH_NATIVE_CURRENCY"
-  }
-}
-```
-
-Treat `check_sender_balances` as a preflight, not a hard stop for the rest of the flow. If `canProceed` is `false`, the response still tells you exactly which balance is short so the agent can warn the user or continue with job construction if that is the intended behavior.
-
-## 3. Build the execution job
+### 2. Build
 
 ```json
 {
   "name": "create_bridge_execution_job",
   "arguments": {
-    "sourceTokenAddress": "0xA0b8...eB48",
-    "destinationTokenAddress": "EPj...Dt1v",
-    "senderAddress": "0xSender...",
-    "recipientAddress": "SolRecipient...",
-    "amount": "50",
-    "amountUnit": "human",
-    "messenger": "ALLBRIDGE",
-    "feePaymentMethod": "WITH_NATIVE_CURRENCY",
-    "walletId": "main"
+    "sourceTokenAddress": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+    "destinationTokenAddress": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+    "senderAddress": "0x1111111111111111111111111111111111111111",
+    "recipientAddress": "0x1111111111111111111111111111111111111111",
+    "amount": "10",
+    "messenger": "CCTP_V2",
+    "feePaymentMethod": "WITH_STABLECOIN"
   }
 }
 ```
-
-The job response contains:
-
-- `jobId`
-- ordered `steps` (typically approval + bridge, or just bridge)
-- ready-to-sign transaction payloads per step
-- `balanceValidation` so the agent can see whether the preflight passed or needs user attention
-- a `handoff` block per step (below)
-- `walletSelector` — matches the `walletId` input
-- `destinationSetup` — hints for Stellar trustlines / Algorand opt-ins when needed
-- `tracking` — how to follow up
-- `bridgePortalUrl` — web fallback
-
-Every step looks like this:
 
 ```json
 {
-  "stepId": "step_1",
-  "description": "Approve USDC spend",
-  "transaction": { /* EVM/Solana/etc. family-specific payload */ },
-  "handoff": {
-    "executionTarget": "local-signer-mcp",
-    "executionTool": "sign_and_broadcast_transaction",
-    "broadcastTarget": "allbridge-mcp",
-    "broadcastTool": "broadcast_signed_transaction",
-    "walletSelector": { "walletId": "main" },
-    "transactionShape": "evm"
-  }
+  "status": "awaiting_signature",
+  "balanceValidation": {
+    "canProceed": true,
+    "requiredBalances": [{ "kind": "source_token", "label": "USDC balance on ETH", "requiredBaseUnits": "10000000", "availableBaseUnits": "1528855507", "satisfied": true }],
+    "notes": ["The 0.239043 USDC gas fee is deducted from the transferred amount.", "Network transaction fees on ETH are paid in ETH on top of these amounts."]
+  },
+  "steps": [
+    {
+      "id": "approve",
+      "status": "awaiting_signature",
+      "waitForConfirmation": true,
+      "transactionFormat": "unsignedEvmTransaction",
+      "transaction": { "chainFamily": "EVM", "chainId": 1, "chainSymbol": "ETH", "from": "0x1111…", "to": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", "data": "0x095ea7b3…", "value": "0" }
+    },
+    {
+      "id": "bridge",
+      "status": "blocked",
+      "transactionFormat": "unsignedEvmTransaction",
+      "transaction": { "chainFamily": "EVM", "chainId": 1, "chainSymbol": "ETH", "from": "0x1111…", "to": "0x7972d6907739593C00e6284c53C83dB3ECd15c33", "data": "0x7dfb08f1…", "value": "0" }
+    }
+  ]
 }
 ```
 
-`handoff` is the agent's instruction manual: whichever server is named in `executionTarget`, call the tool named in `executionTool` and pass the transaction plus the `walletSelector`.
+### 3. Sign and broadcast
 
-Passing `walletId` on the input pins every step's `walletSelector` to that wallet, so the signer's choice is deterministic.
+```json
+{ "name": "sign_and_broadcast_transaction", "arguments": { "chainFamily": "EVM", "chainId": 1, "chainSymbol": "ETH", "from": "0x1111…", "to": "0xA0b8…", "data": "0x095ea7b3…", "value": "0" } }
+```
 
-If the signer is not configured yet, stop here and ask the user to set up `local-signer-mcp` with a `.env` file or client environment variables before trying to sign.
+Wait for the approval to confirm, then send the `bridge` step the same way and keep its `txHash`.
 
-## 4. Sign and broadcast
+### 4. Track
 
-For each step, call the tool `handoff` points at. For a normal local-wallet flow:
+```json
+{ "name": "get_transfer_status", "arguments": { "sourceChain": "ETH", "txId": "0x…bridge hash…" } }
+```
+
+`state` moves from `not_found` (not indexed yet) to `pending` and `completed`.
+
+## Example B — 20 USDC from Arbitrum to Base through NEAR Intents
+
+`create_bridge_execution_job` with `"messenger": "NEAR_INTENTS"` creates a deposit and returns one step, a USDC `transfer` to the deposit address:
 
 ```json
 {
-  "name": "sign_and_broadcast_transaction",
-  "arguments": {
-    "chainFamily": "EVM",
-    "walletId": "main",
-    "transaction": { /* step.transaction */ }
-  }
+  "route": { "messenger": "NEAR_INTENTS", "feePaymentMethod": null },
+  "intent": {
+    "provider": "NEAR Intents",
+    "depositAddress": "0xbC56Aa6E947148a63A617Df97090E1bEA9731e5D",
+    "depositMemo": null,
+    "deadline": "2026-11-23T10:52:28.000Z",
+    "amountToSend": { "inHumanUnits": "20" },
+    "amountToReceive": { "inHumanUnits": "19.975602" },
+    "minAmountToReceive": { "inHumanUnits": "19.775845" },
+    "submitDepositTool": "submit_near_intents_deposit",
+    "submitDepositArguments": { "depositAddress": "0xbC56…1e5D", "txId": "<bridge step transaction hash>" }
+  },
+  "steps": [{ "id": "bridge", "transaction": { "chainFamily": "EVM", "chainId": 42161, "to": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831", "data": "0xa9059cbb…" } }]
 }
 ```
 
-The signer signs, submits, and returns the transaction hash. If the payload was signed elsewhere, route it back through this server:
+Sign and broadcast the step before the deadline, then optionally:
+
+```json
+{ "name": "submit_near_intents_deposit", "arguments": { "depositAddress": "0xbC56…1e5D", "txId": "0x…hash…" } }
+```
+
+## Example C — 100 USDC from Arbitrum to Base through LI.FI Intents
+
+`create_bridge_execution_job` with `"messenger": "LIFI_INTENTS"` returns the approval and a bridge step without a transaction:
 
 ```json
 {
-  "name": "broadcast_signed_transaction",
-  "arguments": {
-    "chainFamily": "EVM",
-    "signedTransaction": "0x..."
-  }
+  "intent": { "provider": "LI.FI Intents", "minAmountToReceive": { "inHumanUnits": "99.383169" }, "maxSlippagePercent": 0.5, "bridgeContract": "0xf01C98b3BEf6cc96BD484E092Cc2A56016ac2eD6" },
+  "quote": { "kind": "intent", "amountToReceive": { "inHumanUnits": "99.882582" }, "allbridgeFee": { "inHumanUnits": "0.1", "symbol": "USDC" } },
+  "steps": [
+    { "id": "approve", "status": "awaiting_signature", "transaction": { "chainFamily": "EVM", "to": "0xaf88…5831", "data": "0x095ea7b3…" } },
+    {
+      "id": "bridge",
+      "status": "blocked",
+      "transaction": null,
+      "build": {
+        "tool": "create_lifi_intents_order",
+        "arguments": {
+          "sourceTokenAddress": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831", "sourceChain": "ARB",
+          "destinationTokenAddress": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", "destinationChain": "BAS",
+          "senderAddress": "0x1111…", "recipientAddress": "0x1111…",
+          "amount": "100000000", "amountUnit": "base", "minAmountToReceive": "99383169"
+        }
+      }
+    }
+  ]
 }
 ```
 
-### Destination setup (if needed)
+1. Sign the `approve` step and wait for it to confirm.
+2. Call `create_lifi_intents_order` with `build.arguments`. It returns `order` (`orderId`, `validUntil`, `secondsToSign`) and `step.transaction`, a call to `LifiIntentsBridge`.
+3. Sign `step.transaction` at once. If it fails with `price_changed`, ask the user about the new amount; if the order expired, call `create_lifi_intents_order` again.
 
-When the destination is **Stellar** and `destinationSetup.required` is `true`, run before the main transfer:
+Track with `get_transfer_status` as in example A.
 
-```json
-{ "name": "check_stellar_trustline", "arguments": { "account": "G...", "assetCode": "USDC", "assetIssuer": "G..." } }
-```
+## Handling errors
 
-If the trustline is missing, build it with `build_stellar_trustline_transaction` and sign it the same way as any other step.
-
-Same shape for **Algorand**: `check_algorand_optin` + `build_algorand_optin_transaction`.
-
-## 5. Track the transfer
-
-```json
-{
-  "name": "get_transfer_status",
-  "arguments": {
-    "sourceChain": "ETH",
-    "txId": "0xSourceTransactionHash"
-  }
-}
-```
-
-Returns signature progress, send and receive transactions, the Allbridge history URL, and a terminal-state flag. Poll until the receive side lands.
-
-When the user references an older transfer, `search_allbridge_transfers` can either:
-
-- resolve a `query` through the explorer search index and expand address or transfer hits
-- or list transfers directly with explorer filters such as `account` (alone or with `chain`), `from`, `to`, `status`, `minFromAmount`, `maxFromAmount`, `page`, and `limit`
-
-If the address history spans multiple networks, add `chain`, `from`, or `to` to narrow it to one network or one direction.
-
-## Error shape
-
-All tools return the same envelope:
-
-```json
-{
-  "ok": false,
-  "error": {
-    "code": "insufficient_balance",
-    "message": "Sender cannot cover the bridged amount",
-    "details": { "token": "USDC", "needed": "50", "available": "10" }
-  }
-}
-```
-
-Common codes: `invalid_chain`, `invalid_token`, `insufficient_balance`, `route_not_found`, `messenger_unavailable`. Use `error.code` and `error.details` to ask the user the right follow-up question instead of retrying blindly.
-
-## Tool catalogue
-
-**Bridge flow (Core).** `plan_bridge_transfer`, `list_supported_chains`, `list_supported_tokens`, `find_bridge_routes`, `quote_bridge_transfer`, `check_sender_balances`, `create_bridge_execution_job`, `build_bridge_transactions`, `get_transfer_status`, `search_allbridge_transfers`, `get_allbridge_transfer`.
-
-**Bridge flow (NEXT).** `plan_bridge_transfer` (with `protocol: "next"` or `"auto"`), `list_next_chains`, `list_next_tokens`, `quote_next_swap`, `build_next_transaction`.
-
-**Destination prerequisites.** `check_stellar_trustline`, `build_stellar_trustline_transaction`, `check_algorand_optin`, `build_algorand_optin_transaction`.
-
-**Broadcast.** `broadcast_signed_transaction`.
-
-Run `pnpm inspect` to see the live input/output schema for each tool.
+| Code | What to do |
+|------|-----------|
+| `ambiguous_token` | Repeat with the exact token address (or `sourceChain` for native currencies) |
+| `amount_too_low` / `amount_too_high` | Use `details.minAmount` / `details.maxAmount` |
+| `quote_unavailable` | No solver quotes the amount now; try another messenger or later |
+| `approval_required` | The approve step has not confirmed yet |
+| `price_changed` | Ask the user; call again with the new `minAmountToReceive` |
+| `rpc_unavailable`, `upstream_error` with status 429 | The operator should set `ALLBRIDGE_<CHAIN>_RPC_URL` |

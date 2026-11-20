@@ -24,7 +24,7 @@ When in doubt, start with `stdio`.
       "command": "/absolute/path/to/node",
       "args": ["/absolute/path/to/allbridge-mcp/dist/index.js"],
       "env": {
-        "ALLBRIDGE_API_BASE_URL": "http://127.0.0.1:3000"
+        "ALLBRIDGE_ETH_RPC_URL": "https://your-eth-rpc.example.com"
       }
     }
   }
@@ -41,7 +41,7 @@ Notes:
 
 ```bash
 claude mcp add allbridge \
-  --env ALLBRIDGE_API_BASE_URL=http://127.0.0.1:3000 \
+  --env ALLBRIDGE_ETH_RPC_URL=https://your-eth-rpc.example.com \
   -- /absolute/path/to/node /absolute/path/to/allbridge-mcp/dist/index.js
 ```
 
@@ -57,7 +57,7 @@ Save as `~/.cursor/mcp.json` (user-wide) or `.cursor/mcp.json` in the project ro
       "args": ["dist/index.js"],
       "cwd": "/absolute/path/to/allbridge-mcp",
       "env": {
-        "ALLBRIDGE_API_BASE_URL": "http://127.0.0.1:3000"
+        "ALLBRIDGE_ETH_RPC_URL": "https://your-eth-rpc.example.com"
       }
     }
   }
@@ -75,7 +75,7 @@ Save as `~/.cursor/mcp.json` (user-wide) or `.cursor/mcp.json` in the project ro
       "command": "/absolute/path/to/node",
       "args": ["/absolute/path/to/allbridge-mcp/dist/index.js"],
       "env": {
-        "ALLBRIDGE_API_BASE_URL": "http://127.0.0.1:3000"
+        "ALLBRIDGE_ETH_RPC_URL": "https://your-eth-rpc.example.com"
       }
     }
   }
@@ -94,7 +94,7 @@ Save as `~/.cursor/mcp.json` (user-wide) or `.cursor/mcp.json` in the project ro
       "command": "/absolute/path/to/node",
       "args": ["/absolute/path/to/allbridge-mcp/dist/index.js"],
       "env": {
-        "ALLBRIDGE_API_BASE_URL": "http://127.0.0.1:3000"
+        "ALLBRIDGE_ETH_RPC_URL": "https://your-eth-rpc.example.com"
       }
     }
   ]
@@ -113,7 +113,7 @@ Save as `~/.cursor/mcp.json` (user-wide) or `.cursor/mcp.json` in the project ro
         "path": "/absolute/path/to/node",
         "args": ["/absolute/path/to/allbridge-mcp/dist/index.js"],
         "env": {
-          "ALLBRIDGE_API_BASE_URL": "http://127.0.0.1:3000"
+          "ALLBRIDGE_ETH_RPC_URL": "https://your-eth-rpc.example.com"
         }
       }
     }
@@ -132,7 +132,7 @@ Paste into the Cline MCP settings UI:
       "command": "/absolute/path/to/node",
       "args": ["/absolute/path/to/allbridge-mcp/dist/index.js"],
       "env": {
-        "ALLBRIDGE_API_BASE_URL": "http://127.0.0.1:3000"
+        "ALLBRIDGE_ETH_RPC_URL": "https://your-eth-rpc.example.com"
       }
     }
   }
@@ -193,7 +193,7 @@ Most real flows run `local-signer-mcp` next to `allbridge-mcp`. The same client 
     "allbridge": {
       "command": "/absolute/path/to/node",
       "args": ["/absolute/path/to/allbridge-mcp/dist/index.js"],
-      "env": { "ALLBRIDGE_API_BASE_URL": "http://127.0.0.1:3000" }
+      "env": { "ALLBRIDGE_ETH_RPC_URL": "https://your-eth-rpc.example.com" }
     },
     "local-signer": {
       "command": "/absolute/path/to/node",
