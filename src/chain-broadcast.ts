@@ -6,6 +6,7 @@ import { TransactionBuilder, rpc as SorobanRpc, type Transaction as StellarTrans
 import { TronWeb } from 'tronweb';
 
 import { config } from './config.js';
+import { evmChainSymbolById, resolveRpcUrl } from './rpc-config.js';
 import type {
   BroadcastResult,
   SignedEvmTransaction,
@@ -21,69 +22,21 @@ function normalizeHex(value: string): string {
   return trimmed.startsWith('0x') ? trimmed.slice(2) : trimmed;
 }
 
-type EvmBroadcastContext = {
-  walletId?: string;
-  chainId: number;
-  chainSymbol?: string;
-};
-
-function normalizeScope(value: string | number | undefined | null): string | null {
-  if (value === undefined || value === null) {
-    return null;
+function resolveEvmRpcUrl(signedTransaction: SignedEvmTransaction): string {
+  const chainSymbol = signedTransaction.chainSymbol?.trim().toUpperCase() || evmChainSymbolById(signedTransaction.chainId);
+  if (!chainSymbol) {
+    throw new Error(`Unknown EVM chain id ${signedTransaction.chainId}. Pass chainSymbol and set ALLBRIDGE_<CHAIN>_RPC_URL.`);
   }
-
-  const trimmed = String(value).trim();
-  return trimmed === '' ? null : trimmed.toUpperCase();
-}
-
-function getScopedEnvValue(baseName: string, scope: string): string | null {
-  const value = process.env[`${baseName}_${scope}`];
-  if (!value) {
-    return null;
-  }
-
-  const trimmed = value.trim();
-  return trimmed === '' ? null : trimmed;
-}
-
-function resolveEvmRpcUrl(context: EvmBroadcastContext): string {
-  const candidates = [
-    normalizeScope(context.walletId),
-    normalizeScope(context.chainSymbol),
-    normalizeScope(context.chainId),
-    'DEFAULT',
-  ].filter((value): value is string => Boolean(value));
-
-  for (const scope of candidates) {
-    const resolved = scope === 'DEFAULT'
-      ? config.ALLBRIDGE_EVM_RPC_URL
-      : getScopedEnvValue('ALLBRIDGE_EVM_RPC_URL', scope);
-    if (resolved) {
-      return resolved;
-    }
-  }
-
-  throw new Error('ALLBRIDGE_EVM_RPC_URL is not configured.');
+  return resolveRpcUrl(chainSymbol);
 }
 
 function getSolanaConnection(): Connection {
-  if (!config.ALLBRIDGE_SOL_RPC_URL) {
-    throw new Error('ALLBRIDGE_SOL_RPC_URL is not configured.');
-  }
-
-  return new Connection(config.ALLBRIDGE_SOL_RPC_URL, 'confirmed');
+  return new Connection(resolveRpcUrl('SOL'), 'confirmed');
 }
 
 function getTronWeb(): TronWeb {
-  if (!config.ALLBRIDGE_TRX_RPC_URL) {
-    throw new Error('ALLBRIDGE_TRX_RPC_URL is not configured.');
-  }
-
-  return new TronWeb(
-    config.ALLBRIDGE_TRX_RPC_URL,
-    config.ALLBRIDGE_TRX_RPC_URL,
-    config.ALLBRIDGE_TRX_RPC_URL,
-  );
+  const rpcUrl = resolveRpcUrl('TRX');
+  return new TronWeb(rpcUrl, rpcUrl, rpcUrl);
 }
 
 async function resolveStacksNetworkForRpcUrl(rpcUrl: string) {
@@ -118,20 +71,8 @@ async function resolveStacksNetworkForRpcUrl(rpcUrl: string) {
   );
 }
 
-function getSorobanPassphrase(): string {
-  if (config.ALLBRIDGE_SRB_NETWORK_PASSPHRASE) {
-    return config.ALLBRIDGE_SRB_NETWORK_PASSPHRASE;
-  }
-
-  throw new Error('ALLBRIDGE_SRB_NETWORK_PASSPHRASE is not configured.');
-}
-
 function getSorobanClient() {
-  if (!config.ALLBRIDGE_SRB_RPC_URL) {
-    throw new Error('ALLBRIDGE_SRB_RPC_URL is not configured.');
-  }
-
-  return new SorobanRpc.Server(config.ALLBRIDGE_SRB_RPC_URL);
+  return new SorobanRpc.Server(resolveRpcUrl('SRB'));
 }
 
 async function broadcastEvm(signedTransaction: SignedEvmTransaction): Promise<BroadcastResult> {
@@ -180,11 +121,7 @@ async function broadcastTron(signedTransaction: Record<string, unknown>): Promis
 }
 
 async function broadcastStacks(signedTransactionHex: string): Promise<BroadcastResult> {
-  if (!config.ALLBRIDGE_STX_RPC_URL) {
-    throw new Error('ALLBRIDGE_STX_RPC_URL is not configured.');
-  }
-
-  const { network } = await resolveStacksNetworkForRpcUrl(config.ALLBRIDGE_STX_RPC_URL);
+  const { network } = await resolveStacksNetworkForRpcUrl(resolveRpcUrl('STX'));
   const tx = deserializeTransaction(new BytesReader(Buffer.from(normalizeHex(signedTransactionHex), 'hex')));
   const response = await broadcastTransaction({ transaction: tx, network });
 
@@ -197,8 +134,11 @@ async function broadcastStacks(signedTransactionHex: string): Promise<BroadcastR
 
 async function broadcastSoroban(signedTransactionXdr: string): Promise<BroadcastResult> {
   const server = getSorobanClient();
-  const transaction = TransactionBuilder.fromXDR(signedTransactionXdr, getSorobanPassphrase()) as StellarTransaction;
+  const transaction = TransactionBuilder.fromXDR(signedTransactionXdr, config.ALLBRIDGE_SRB_NETWORK_PASSPHRASE) as StellarTransaction;
   const sent = await server.sendTransaction(transaction);
+  if (sent.status === 'ERROR' || sent.status === 'TRY_AGAIN_LATER') {
+    throw new Error(`Stellar RPC rejected the transaction ${sent.hash} with status ${sent.status}.`);
+  }
 
   return {
     chainFamily: 'SRB',

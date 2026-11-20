@@ -2,7 +2,6 @@ import http from 'node:http';
 
 import { describe, expect, test } from '@jest/globals';
 
-import { AllbridgeApiClient } from '../src/allbridge-api-client.js';
 import { AllbridgeExplorerApiClient } from '../src/explorer-api-client.js';
 import { ALLBRIDGE_MCP_CLIENT_HEADER_NAME, ALLBRIDGE_MCP_CLIENT_HEADER_VALUE } from '../src/http-headers.js';
 
@@ -41,24 +40,6 @@ function closeServer(server: http.Server): Promise<void> {
 }
 
 describe('Allbridge HTTP headers', () => {
-  test('attaches the MCP client header to rest api requests', async () => {
-    let clientHeader: string | string[] | undefined;
-    const { server, url } = await createServer((req) => {
-      clientHeader = req.headers[ALLBRIDGE_MCP_CLIENT_HEADER_NAME.toLowerCase()];
-      return { result: '1' };
-    });
-
-    try {
-      const client = new AllbridgeApiClient(url, 5_000);
-      const response = await client.getTokenBalance({ address: '0xabc', token: '0xdef' });
-
-      expect(clientHeader).toBe(ALLBRIDGE_MCP_CLIENT_HEADER_VALUE);
-      expect(response).toEqual({ result: '1' });
-    } finally {
-      await closeServer(server);
-    }
-  });
-
   test('attaches the MCP client header to explorer requests', async () => {
     let clientHeader: string | string[] | undefined;
     const { server, url } = await createServer((req) => {

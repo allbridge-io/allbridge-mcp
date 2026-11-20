@@ -1,27 +1,30 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 
-import { AllbridgeApiClient } from './allbridge-api-client.js';
-import { AllbridgeExplorerApiClient } from './explorer-api-client.js';
+import { broadcastSignedTransactionByFamily } from './chain-broadcast.js';
 import { config } from './config.js';
+import { createSdkGateway } from './core-gateway.js';
+import { AllbridgeExplorerApiClient } from './explorer-api-client.js';
 import { startStreamableHttpServer } from './http-server.js';
-import { registerAllbridgeTools } from './tools.js';
+import { createToolContext, registerAllbridgeTools } from './tools/index.js';
+
+const toolContext = createToolContext({
+  gateway: createSdkGateway({
+    coreApiUrl: config.ALLBRIDGE_CORE_API_URL,
+    sorobanNetworkPassphrase: config.ALLBRIDGE_SRB_NETWORK_PASSPHRASE,
+  }),
+  explorer: new AllbridgeExplorerApiClient(config.ALLBRIDGE_CORE_API_URL, config.ALLBRIDGE_API_TIMEOUT_MS),
+  explorerBaseUrl: config.ALLBRIDGE_CORE_API_URL,
+  broadcastSignedTransactionByFamily,
+});
 
 function createServer(): McpServer {
   const server = new McpServer({
     name: 'allbridge-mcp',
-    version: '0.1.0',
+    version: '0.2.0',
   });
 
-  const apiClient = new AllbridgeApiClient(
-    config.ALLBRIDGE_API_BASE_URL,
-    config.ALLBRIDGE_API_TIMEOUT_MS,
-  );
-  const explorerClient = new AllbridgeExplorerApiClient(
-    config.ALLBRIDGE_EXPLORER_API_BASE_URL,
-    config.ALLBRIDGE_API_TIMEOUT_MS,
-  );
-  registerAllbridgeTools(server, apiClient, explorerClient);
+  registerAllbridgeTools(server, toolContext);
 
   return server;
 }
