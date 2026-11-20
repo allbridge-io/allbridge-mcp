@@ -1,4 +1,5 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { z } from 'zod';
 
 import { validateAddressForChainType } from '../chain-catalog.js';
 import { createBridgeExecutionJob } from '../execution.js';
@@ -24,7 +25,7 @@ export function registerExecutionTools(server: McpServer, context: ToolContext):
     {
       title: 'Create Bridge Execution Job',
       description:
-        'Build an ordered execution job for a transfer: the quote, an advisory balance check, destination prerequisites, and signer-ready transactions (allowance reset when needed, approve when needed, bridge). Each step transaction can be passed as is to local-signer-mcp sign_and_broadcast_transaction. Source chains: EVM, Solana, Tron, Stacks, Stellar.',
+        'Build an ordered execution job for a transfer: the quote, an advisory balance check, destination prerequisites, and signer-ready transactions (allowance reset when needed, approve when needed, bridge). Each step transaction can be passed as is to local-signer-mcp sign_and_broadcast_transaction. NEAR_INTENTS: the job creates a one-time deposit and the bridge step transfers to it. LIFI_INTENTS: the bridge step has no transaction yet; call its build.tool (create_lifi_intents_order) right before signing. Source chains: EVM, Solana, Tron, Stacks, Stellar.',
       inputSchema: {
         ...tokenPairByAddressSchema,
         senderAddress: requiredTextSchema('Sender address on the source chain. Do not pass null.'),
@@ -34,6 +35,12 @@ export function registerExecutionTools(server: McpServer, context: ToolContext):
         amountUnit: amountUnitSchema,
         messenger: messengerSchema,
         feePaymentMethod: feePaymentMethodSchema,
+        maxSlippagePercent: z
+          .number()
+          .min(0)
+          .max(5)
+          .optional()
+          .describe('LIFI_INTENTS only: how far (percent) below the quote the order may price before create_lifi_intents_order stops with price_changed. Default 0.5.'),
       },
     },
     async (parsed) => runTool('Create bridge execution job', async () => {
@@ -61,6 +68,7 @@ export function registerExecutionTools(server: McpServer, context: ToolContext):
         amount: normalizeAmount(requireText(parsed.amount, 'amount'), parsed.amountUnit, sourceToken),
         messenger: parsed.messenger,
         feePaymentMethod: parsed.feePaymentMethod ?? 'WITH_NATIVE_CURRENCY',
+        maxSlippagePercent: parsed.maxSlippagePercent,
       });
     }),
   );

@@ -31,7 +31,7 @@ export type BridgeExecutionStepContract = {
   status: string;
   summary: string;
   transactionFormat: string;
-  /** Signer-ready unsigned transaction; null while the step still has to be built (`requires_build`). */
+  /** Signer-ready unsigned transaction; null while the step still has to be built with `build`. */
   transaction: RecordLike | null;
   /** How to build a `requires_build` step right before signing. */
   build: { tool: string; arguments: RecordLike } | null;
@@ -120,7 +120,7 @@ function readStep(value: unknown, index: number): BridgeExecutionStepContract {
 
   let transaction: RecordLike | null = null;
   let build: BridgeExecutionStepContract['build'] = null;
-  if (status === 'requires_build') {
+  if (step.transaction === null || status === 'requires_build') {
     const buildRecord = readRecord(step.build, `${field}.build`);
     build = {
       tool: readString(buildRecord.tool, `${field}.build.tool`),

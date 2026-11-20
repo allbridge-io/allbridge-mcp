@@ -11,6 +11,7 @@ export type ToolErrorCode =
   | 'amount_too_high'
   | 'quote_unavailable'
   | 'quote_expired'
+  | 'price_changed'
   | 'approval_required'
   | 'rpc_unavailable'
   | 'upstream_error'

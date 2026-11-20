@@ -2,7 +2,14 @@ import { FeePaymentMethod, type AmountFormatted, type GasFeeOptions } from '@all
 
 import type { CoreGateway, CoreToken } from './core-gateway.js';
 import { nativeDecimals, nativeSymbol } from './native-currency.js';
-import { detectMessengers, type MessengerName, toSdkMessenger } from './messengers.js';
+import {
+  type BridgeMessengerName,
+  detectMessengers,
+  type IntentMessengerName,
+  isIntentMessenger,
+  type MessengerName,
+  toSdkMessenger,
+} from './messengers.js';
 import { toUserFacingError } from './sdk-errors.js';
 import {
   baseUnitsToTokenAmount,
@@ -23,15 +30,38 @@ export type FeePaymentOption = {
   amountToReceive: TokenAmount | null;
 };
 
-export type MessengerQuote = {
-  messenger: MessengerName;
-  /** bridge: deterministic Allbridge fee; intent: market-priced quote from a solver network. */
+/** A bridge messenger: deterministic Allbridge fee, gas fee paid with one of `feePaymentOptions`. */
+export type BridgeMessengerQuote = {
+  messenger: BridgeMessengerName;
   kind: 'bridge';
   estimatedTimeMs: number | null;
   /** Amount received with the default payment method (WITH_NATIVE_CURRENCY). */
   amountToReceive: TokenAmount;
   feePaymentOptions: FeePaymentOption[];
 };
+
+/**
+ * An intent messenger: a market-priced quote from a solver network. There is no gas fee to choose;
+ * the amounts already include every fee.
+ */
+export type IntentMessengerQuote = {
+  messenger: IntentMessengerName;
+  kind: 'intent';
+  provider: 'NEAR Intents' | 'LI.FI Intents';
+  estimatedTimeMs: number | null;
+  /** Expected amount to receive. */
+  amountToReceive: TokenAmount;
+  /** NEAR Intents: the amount guaranteed after slippage. */
+  minAmountToReceive: TokenAmount | null;
+  /** LI.FI Intents: the Allbridge fee, a part of the sent amount, in source token units. */
+  allbridgeFee: (TokenAmount & { symbol: string }) | null;
+  /** True when the amounts come from a recent-quotes model rather than a live quote for this amount. */
+  estimated: boolean;
+  feePaymentOptions: [];
+  notes: string[];
+};
+
+export type MessengerQuote = BridgeMessengerQuote | IntentMessengerQuote;
 
 export type UnavailableQuote = {
   messenger: MessengerName;
@@ -63,8 +93,8 @@ async function quoteBridgeMessenger(
   sourceToken: CoreToken,
   destinationToken: CoreToken,
   amount: NormalizedAmount,
-  messenger: MessengerName,
-): Promise<MessengerQuote> {
+  messenger: BridgeMessengerName,
+): Promise<BridgeMessengerQuote> {
   const sdkMessenger = toSdkMessenger(messenger);
   const result = await gateway.getAmountToBeReceivedAndGasFeeOptions(
     amount.amountInHumanUnits,
@@ -130,6 +160,56 @@ async function quoteBridgeMessenger(
   };
 }
 
+const INTENT_NOTES = {
+  NEAR_INTENTS: [
+    'Market-priced: the amounts are set when the deposit is created and may differ slightly from this quote.',
+    'If the transfer cannot be completed, NEAR Intents refunds the deposit to the sender minus a refund fee.',
+  ],
+  LIFI_INTENTS: [
+    'Market-priced: the order is priced when it is created, right before signing.',
+    'An unfilled order is refunded to the sender by LI.FI; the Allbridge fee is not refunded.',
+  ],
+} as const;
+
+/** Builds an intent quote from the float amounts of an SDK quote, deposit or order. */
+export function intentQuote(
+  messenger: IntentMessengerName,
+  sourceToken: CoreToken,
+  destinationToken: CoreToken,
+  amounts: { amountOut: string; minAmountOut?: string; fee?: string; timeEstimate: number; estimated?: boolean },
+): IntentMessengerQuote {
+  return {
+    messenger,
+    kind: 'intent',
+    provider: messenger === 'NEAR_INTENTS' ? 'NEAR Intents' : 'LI.FI Intents',
+    estimatedTimeMs: Number.isFinite(amounts.timeEstimate) ? Math.round(amounts.timeEstimate * 1000) : null,
+    amountToReceive: floatToTokenAmount(amounts.amountOut, destinationToken.decimals),
+    minAmountToReceive: amounts.minAmountOut ? floatToTokenAmount(amounts.minAmountOut, destinationToken.decimals) : null,
+    allbridgeFee: amounts.fee
+      ? { ...floatToTokenAmount(amounts.fee, sourceToken.decimals), symbol: sourceToken.symbol }
+      : null,
+    estimated: amounts.estimated === true,
+    feePaymentOptions: [],
+    notes: [...INTENT_NOTES[messenger]],
+  };
+}
+
+async function quoteIntentMessenger(
+  gateway: CoreGateway,
+  sourceToken: CoreToken,
+  destinationToken: CoreToken,
+  amount: NormalizedAmount,
+  messenger: IntentMessengerName,
+): Promise<IntentMessengerQuote> {
+  const params = { amount: amount.amountInHumanUnits, sourceToken, destinationToken };
+
+  if (messenger === 'NEAR_INTENTS') {
+    return intentQuote(messenger, sourceToken, destinationToken, await gateway.getNearIntentsQuote(params));
+  }
+
+  return intentQuote(messenger, sourceToken, destinationToken, await gateway.getLifiIntentsQuote(params));
+}
+
 export async function quoteMessenger(
   gateway: CoreGateway,
   sourceToken: CoreToken,
@@ -137,7 +217,9 @@ export async function quoteMessenger(
   amount: NormalizedAmount,
   messenger: MessengerName,
 ): Promise<MessengerQuote> {
-  return quoteBridgeMessenger(gateway, sourceToken, destinationToken, amount, messenger);
+  return isIntentMessenger(messenger)
+    ? quoteIntentMessenger(gateway, sourceToken, destinationToken, amount, messenger)
+    : quoteBridgeMessenger(gateway, sourceToken, destinationToken, amount, messenger);
 }
 
 /**

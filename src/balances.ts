@@ -63,11 +63,14 @@ export async function validateSenderBalances(params: {
   feePaymentMethod: FeePaymentMethodName;
 }): Promise<BalanceValidation> {
   const { gateway, sourceToken, senderAddress, amount, quote } = params;
-  const feePaymentMethod = params.feePaymentMethod;
+  // Intent messengers have no gas fee to pay: the quoted amounts already include every fee.
+  const feePaymentMethod = quote.kind === 'bridge' ? params.feePaymentMethod : null;
   const notes: string[] = [];
 
-  const feeOption = quote.feePaymentOptions.find((option) => option.feePaymentMethod === feePaymentMethod);
-  if (!feeOption) {
+  const feeOption = quote.kind === 'bridge'
+    ? quote.feePaymentOptions.find((option) => option.feePaymentMethod === feePaymentMethod) ?? null
+    : null;
+  if (quote.kind === 'bridge' && !feeOption) {
     throw new UserFacingToolError('validation_error', `${feePaymentMethod} is not available for ${quote.messenger} on this route.`, {
       messenger: quote.messenger,
       feePaymentMethod,
@@ -103,7 +106,7 @@ export async function validateSenderBalances(params: {
       };
   pending.push(sourceRequirement);
 
-  if (feePaymentMethod === 'WITH_NATIVE_CURRENCY' && feeOption.fee.inBaseUnits !== '0') {
+  if (feeOption?.feePaymentMethod === 'WITH_NATIVE_CURRENCY' && feeOption.fee.inBaseUnits !== '0') {
     if (sourceToken.isNative) {
       sourceRequirement.requiredBaseUnits = add(sourceRequirement.requiredBaseUnits, feeOption.fee.inBaseUnits);
       sourceRequirement.label = `${sourceRequirement.label} (amount + gas fee)`;
@@ -119,14 +122,14 @@ export async function validateSenderBalances(params: {
     }
   }
 
-  if (feePaymentMethod === 'WITH_STABLECOIN') {
+  if (feeOption?.feePaymentMethod === 'WITH_STABLECOIN') {
     notes.push(`The ${feeOption.fee.inHumanUnits} ${sourceToken.symbol} gas fee is deducted from the transferred amount.`);
     if (feeOption.amountToReceive === null) {
       notes.push('The gas fee is larger than the amount: increase the amount or pay the fee in the native currency.');
     }
   }
 
-  if (feePaymentMethod === 'WITH_ABR' && feeOption.fee.inBaseUnits !== '0') {
+  if (feeOption?.feePaymentMethod === 'WITH_ABR' && feeOption.fee.inBaseUnits !== '0') {
     const abrToken = sourceToken.abrPayer?.abrToken;
     if (abrToken) {
       pending.push({
@@ -164,7 +167,7 @@ export async function validateSenderBalances(params: {
 
   const unreadable = requiredBalances.some((requirement) => requirement.satisfied === null);
   const canProceed = requiredBalances.every((requirement) => requirement.satisfied === true)
-    && (feePaymentMethod !== 'WITH_STABLECOIN' || feeOption.amountToReceive !== null);
+    && (feeOption?.feePaymentMethod !== 'WITH_STABLECOIN' || feeOption.amountToReceive !== null);
 
   return {
     sourceToken: summarizeToken(sourceToken),

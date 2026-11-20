@@ -94,7 +94,7 @@ export function registerQuoteTools(server: McpServer, context: ToolContext): voi
     {
       title: 'Plan Bridge Transfer',
       description:
-        'Primary planning tool. Resolves the tokens by chain and symbol and quotes every available messenger (CCTP_V2, OFT, X_RESERVE) for the amount, with the received amount and gas fee for each fee payment method. Use token addresses when a chain has several tokens with the same symbol.',
+        'Primary planning tool. Resolves the tokens by chain and symbol and quotes every available messenger for the amount, sorted by the amount received. Bridge messengers (CCTP_V2, OFT, X_RESERVE) list the gas fee for each fee payment method; intent messengers (NEAR_INTENTS, LIFI_INTENTS) are market-priced, can deliver a different token or native currency, and include every fee in the quote. Use token addresses when a chain has several tokens with the same symbol.',
       inputSchema: {
         ...routeSelectionSchema,
         amount: requiredTextSchema('Amount to send. Do not pass null.'),
