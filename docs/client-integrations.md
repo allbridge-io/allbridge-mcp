@@ -14,7 +14,7 @@ When in doubt, start with `stdio`.
 Most recipes below start a local checkout (`node /absolute/path/to/allbridge-mcp/dist/index.js`), which suits development. To run the published package instead, replace the command with `npx` and pin the version:
 
 ```json
-{ "command": "npx", "args": ["-y", "@allbridge/allbridge-mcp@1.0.0"] }
+{ "command": "npx", "args": ["-y", "@allbridge/allbridge-mcp@1.0.1"] }
 ```
 
 The `env` block stays the same.
@@ -22,7 +22,7 @@ The `env` block stays the same.
 ## Codex
 
 ```bash
-codex mcp add allbridge -- npx -y @allbridge/allbridge-mcp@1.0.0
+codex mcp add allbridge -- npx -y @allbridge/allbridge-mcp@1.0.1
 ```
 
 Or in `~/.codex/config.toml`:
@@ -30,7 +30,7 @@ Or in `~/.codex/config.toml`:
 ```toml
 [mcp_servers.allbridge]
 command = "npx"
-args = ["-y", "@allbridge/allbridge-mcp@1.0.0"]
+args = ["-y", "@allbridge/allbridge-mcp@1.0.1"]
 ```
 
 ## Claude Desktop
@@ -210,7 +210,7 @@ Most real flows run `local-signer-mcp` next to `allbridge-mcp`. The same client 
   "mcpServers": {
     "allbridge": {
       "command": "npx",
-      "args": ["-y", "@allbridge/allbridge-mcp@1.0.0"],
+      "args": ["-y", "@allbridge/allbridge-mcp@1.0.1"],
       "env": { "ALLBRIDGE_ETH_RPC_URL": "https://your-eth-rpc.example.com" }
     },
     "local-signer": {

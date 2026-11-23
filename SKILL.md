@@ -1,6 +1,6 @@
 # Allbridge Bridge Flow
 
-Use this MCP server to plan, build and track Allbridge Core transfers. It never signs: pair it with `local-signer-mcp` (or any external signer) for signing. For questions about the repository, the SDK or integration code, use `allbridge-dev-mcp` instead.
+Use this MCP server to plan, build and track Allbridge Core transfers. It never signs: pair it with `local-signer-mcp` (or any external signer) for signing.
 
 ## Use This Server When
 
