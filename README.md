@@ -148,6 +148,18 @@ pnpm smoke
 
 `pnpm smoke` drives the built server over stdio against the live Core API: it lists routes, quotes, builds an execution job and checks it against the job contract. It never signs or sends anything.
 
+## Releasing
+
+CI (`.github/workflows/ci.yml`) runs lint, tests and the build on every pull request and push. On a push to `master` it publishes `@allbridge/allbridge-mcp` to npm when the `version` in `package.json` is not on npm yet, then tags `v<version>` and creates a GitHub release.
+
+To release, bump `version` in the pull request ([semver](https://semver.org): while on `0.x`, a patch for fixes and a minor for features or breaking changes). Merging a pull request without a version bump publishes nothing.
+
+Publishing uses npm trusted publishing (GitHub OIDC), so there is no npm token in the repository. One-time setup:
+
+1. Publish the first version by hand from an account with access to the `@allbridge` organization: `npm publish --access public`.
+2. On npmjs.com, open the package settings and add a trusted publisher: GitHub Actions, organization `allbridge-io`, repository `allbridge-mcp`, workflow `ci.yml`, environment `npm-registry`.
+3. Create the `npm-registry` environment in the GitHub repository settings (optionally restricted to `master`).
+
 ## Documentation
 
 - [`docs/overview.md`](./docs/overview.md) — role and boundaries
