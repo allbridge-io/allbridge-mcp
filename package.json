@@ -1,21 +1,31 @@
 {
   "name": "allbridge-mcp",
-  "private": true,
   "version": "0.2.0",
   "description": "MCP server for Allbridge Core bridge workflows",
+  "bin": {
+    "allbridge-mcp": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "!dist/smoke.*",
+    "README.md",
+    "SKILL.md"
+  ],
   "type": "module",
   "engines": {
     "node": ">=22.12.0"
   },
   "scripts": {
-    "build": "tsc",
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
+    "build": "npm run clean && tsc",
     "lint": "eslint src test --ext .ts",
     "smoke": "node --loader ts-node/esm src/smoke.ts",
     "test:integration": "pnpm smoke",
     "start": "node dist/index.js",
     "start:dev": "node --loader ts-node/esm src/index.ts",
     "inspect": "npx @modelcontextprotocol/inspector node dist/index.js",
-    "test": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --config ./jest.config.cjs --passWithNoTests"
+    "test": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --config ./jest.config.cjs --passWithNoTests",
+    "prepack": "npm run build"
   },
   "dependencies": {
     "@allbridge/bridge-core-sdk": "3.38.0",

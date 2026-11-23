@@ -58,6 +58,22 @@ That starts the server on `stdio` against the public Core API. Register it in Cl
 claude mcp add allbridge -- node /absolute/path/to/allbridge-mcp/dist/index.js
 ```
 
+### Run with npx
+
+The package ships an `allbridge-mcp` binary, so a client can start the published version without a checkout. Pin the version:
+
+```bash
+claude mcp add allbridge -- npx -y allbridge-mcp@0.2.0
+```
+
+```json
+{
+  "mcpServers": {
+    "allbridge": { "command": "npx", "args": ["-y", "allbridge-mcp@0.2.0"] }
+  }
+}
+```
+
 More client recipes live in [`docs/client-integrations.md`](./docs/client-integrations.md) and [`examples/`](./examples).
 
 ## Configuration

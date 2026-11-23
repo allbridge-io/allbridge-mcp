@@ -9,6 +9,30 @@ Copy-paste recipes for the most common MCP clients. Replace every `/absolute/pat
 
 When in doubt, start with `stdio`.
 
+## Path Or npx
+
+The recipes below start a local checkout (`node /absolute/path/to/allbridge-mcp/dist/index.js`), which suits development. To run the published package instead, replace the command with `npx` and pin the version:
+
+```json
+{ "command": "npx", "args": ["-y", "allbridge-mcp@0.2.0"] }
+```
+
+The `env` block stays the same.
+
+## Codex
+
+```bash
+codex mcp add allbridge -- npx -y allbridge-mcp@0.2.0
+```
+
+Or in `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.allbridge]
+command = "npx"
+args = ["-y", "allbridge-mcp@0.2.0"]
+```
+
 ## Claude Desktop
 
 1. Open `Settings`.
