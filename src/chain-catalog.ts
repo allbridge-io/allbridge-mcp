@@ -1,33 +1,37 @@
-import algosdk from 'algosdk';
 import { isAddress as isEvmAddress } from 'ethers';
 import { PublicKey } from '@solana/web3.js';
-import { isValidSuiAddress } from '@mysten/sui/utils';
 import { validateStacksAddress } from '@stacks/transactions';
 import { StrKey } from '@stellar/stellar-sdk';
 import TronWeb from 'tronweb';
 
-import type { AllbridgeApiClient } from './allbridge-api-client.js';
+import type { CoreGateway, CoreToken } from './core-gateway.js';
 import { normalizeSymbol } from './utils.js';
-import type { TokenWithChainDetails } from './types.js';
 import { UserFacingToolError } from './tool-errors.js';
+
+/** Chain families this server can build and broadcast transactions for. */
+export const SUPPORTED_CHAIN_TYPES: ReadonlySet<string> = new Set(['EVM', 'SOLANA', 'TRX', 'STX', 'SRB']);
 
 export const COMMON_CHAIN_ALIASES: Record<string, string> = {
   ETHEREUM: 'ETH',
   TRON: 'TRX',
-  TRX: 'TRX',
   SOLANA: 'SOL',
   STACKS: 'STX',
   STELLAR: 'SRB',
   SOROBAN: 'SRB',
-  ALGORAND: 'ALG',
-  SUI: 'SUI',
   ARBITRUM: 'ARB',
   OPTIMISM: 'OPT',
-  BASE: 'BASE',
-  BNB: 'BNB',
-  CELO: 'CELO',
+  BASE: 'BAS',
+  BNB: 'BSC',
+  BNBCHAIN: 'BSC',
+  BINANCE: 'BSC',
+  CELO: 'CEL',
   POLYGON: 'POL',
   MATIC: 'POL',
+  AVALANCHE: 'AVA',
+  AVAX: 'AVA',
+  UNICHAIN: 'UNI',
+  SONIC: 'SNC',
+  LINEA: 'LIN',
 };
 
 function normalizeLookupKey(value: string): string {
@@ -56,25 +60,22 @@ export type ChainCatalogEntry = {
   chainName: string | null;
   chainType: string | null;
   aliases: string[];
-  tokens: TokenWithChainDetails[];
+  tokens: CoreToken[];
 };
 
 export type ChainCatalog = {
   chains: ChainCatalogEntry[];
   byLookup: Map<string, ChainCatalogEntry>;
-  tokens: TokenWithChainDetails[];
+  tokens: CoreToken[];
 };
 
 export type ResolvedTokenSelection = {
   chain: ChainCatalogEntry;
-  token: TokenWithChainDetails;
+  token: CoreToken;
 };
 
-export async function loadChainCatalog(
-  client: AllbridgeApiClient,
-  tokenType: 'swap' | 'pool' | 'yield' = 'swap',
-): Promise<ChainCatalog> {
-  const tokens = await client.getTokens({ type: tokenType });
+export async function loadChainCatalog(gateway: Pick<CoreGateway, 'getTokens'>): Promise<ChainCatalog> {
+  const tokens = (await gateway.getTokens()).filter((token) => SUPPORTED_CHAIN_TYPES.has(String(token.chainType)));
   const chainsBySymbol = new Map<string, ChainCatalogEntry>();
 
   for (const token of tokens) {
@@ -127,7 +128,7 @@ export function summarizeSupportedChains(catalog: ChainCatalog) {
   }));
 }
 
-export function summarizeSupportedTokens(tokens: TokenWithChainDetails[]) {
+export function summarizeSupportedTokens(tokens: CoreToken[]) {
   return tokens.map((token) => ({
     symbol: token.symbol,
     name: token.name,
@@ -136,6 +137,7 @@ export function summarizeSupportedTokens(tokens: TokenWithChainDetails[]) {
     chainSymbol: token.chainSymbol,
     chainName: token.chainName ?? null,
     chainType: token.chainType ?? null,
+    isNative: token.isNative === true,
   }));
 }
 
@@ -177,7 +179,6 @@ export function resolveChainFromCatalog(
 export function resolveTokenForChain(
   catalog: ChainCatalog,
   chainInput: string | null | undefined,
-  tokenType: 'swap' | 'pool' | 'yield',
   tokenAddress: string | null | undefined,
   tokenSymbol: string | null | undefined,
   fieldNames: {
@@ -197,7 +198,6 @@ export function resolveTokenForChain(
         field: fieldNames.tokenAddress,
         chainSymbol: chain.chainSymbol,
         chainName: chain.chainName,
-        tokenType,
         supportedTokens: summarizeSupportedTokens(chain.tokens),
       });
     }
@@ -221,7 +221,6 @@ export function resolveTokenForChain(
       field: fieldNames.tokenSymbol,
       chainSymbol: chain.chainSymbol,
       chainName: chain.chainName,
-      tokenType,
       tokenSymbol: tokenSymbol.trim(),
       matchingTokens: summarizeSupportedTokens(matchingTokens),
       supportedTokens: summarizeSupportedTokens(chain.tokens),
@@ -236,7 +235,6 @@ export function resolveTokenForChain(
       field: fieldNames.tokenSymbol,
       chainSymbol: chain.chainSymbol,
       chainName: chain.chainName,
-      tokenType,
       supportedTokens: summarizeSupportedTokens(chain.tokens),
     });
   }
@@ -244,11 +242,17 @@ export function resolveTokenForChain(
   return { chain, token };
 }
 
+/**
+ * Resolves a token by address. Native currencies of EVM chains share a placeholder address, so pass
+ * `chainInput` to pick the chain when an address exists on several chains.
+ */
 export function resolveTokenByAddressFromCatalog(
   catalog: ChainCatalog,
   tokenAddress: string | null | undefined,
   fieldName: string,
-): TokenWithChainDetails {
+  chainInput?: string | null,
+  chainFieldName = 'chain',
+): CoreToken {
   const value = typeof tokenAddress === 'string' ? tokenAddress.trim() : '';
 
   if (!value) {
@@ -258,13 +262,30 @@ export function resolveTokenByAddressFromCatalog(
     });
   }
 
+  const chain = typeof chainInput === 'string' && chainInput.trim()
+    ? resolveChainFromCatalog(catalog, chainInput, chainFieldName)
+    : null;
+  const candidates = chain ? chain.tokens : catalog.tokens;
   const normalizedAddress = value.toLowerCase();
-  const token = catalog.tokens.find((candidate) => candidate.tokenAddress.toLowerCase() === normalizedAddress);
-  if (!token) {
-    throw new UserFacingToolError('unsupported_token', `Token ${value} is not supported by this server.`, {
+  const matches = candidates.filter((candidate) => candidate.tokenAddress.toLowerCase() === normalizedAddress);
+
+  if (matches.length > 1) {
+    throw new UserFacingToolError('ambiguous_token', `Token address ${value} exists on several chains.`, {
       field: fieldName,
       input: value,
-      supportedTokens: summarizeSupportedTokens(catalog.tokens),
+      chains: matches.map((candidate) => candidate.chainSymbol),
+      nextAction: `Pass ${chainFieldName} to choose the chain.`,
+    });
+  }
+
+  const token = matches[0];
+  if (!token) {
+    throw new UserFacingToolError('unsupported_token', chain
+      ? `Token ${value} is not available on ${chain.chainSymbol}.`
+      : `Token ${value} is not supported by this server.`, {
+      field: fieldName,
+      input: value,
+      supportedTokens: summarizeSupportedTokens(chain ? chain.tokens : catalog.tokens),
     });
   }
 
@@ -294,7 +315,6 @@ export function validateAddressForChainType(
     case 'SOLANA':
       validator = 'Solana PublicKey';
       try {
-        // eslint-disable-next-line no-new
         new PublicKey(value);
         valid = true;
       } catch {
@@ -307,10 +327,6 @@ export function validateAddressForChainType(
         ? TronWeb.utils.address.isAddress(value)
         : false;
       break;
-    case 'ALG':
-      validator = 'algosdk.isValidAddress';
-      valid = algosdk.isValidAddress(value);
-      break;
     case 'STX':
       validator = 'validateStacksAddress';
       valid = validateStacksAddress(value);
@@ -318,10 +334,6 @@ export function validateAddressForChainType(
     case 'SRB':
       validator = 'StrKey.isValidEd25519PublicKey / StrKey.isValidContract';
       valid = StrKey.isValidEd25519PublicKey(value) || StrKey.isValidContract(value);
-      break;
-    case 'SUI':
-      validator = 'isValidSuiAddress';
-      valid = isValidSuiAddress(value);
       break;
     default:
       valid = value.length > 0;

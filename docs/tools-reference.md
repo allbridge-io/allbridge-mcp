@@ -1,249 +1,140 @@
 # Tools Reference
 
-Every tool in `allbridge-mcp` returns a structured envelope. On success it carries the tool-specific payload. On failure it returns:
+Every tool returns `structuredContent`. Failures return `isError: true` with:
 
 ```json
-{
-  "ok": false,
-  "error": {
-    "code": "string",
-    "message": "string",
-    "details": {}
-  }
-}
+{ "ok": false, "error": { "code": "amount_too_low", "message": "...", "details": { } } }
 ```
 
-Tools are grouped by responsibility: Bridge, Destination prerequisites, Broadcast.
+Error codes: `missing_input`, `unsupported_chain`, `unsupported_token`, `ambiguous_token`, `invalid_amount`, `invalid_address`, `unsupported_route`, `amount_too_low`, `amount_too_high`, `quote_unavailable`, `price_changed`, `approval_required`, `rpc_unavailable`, `upstream_error`, `validation_error`.
 
-## Bridge
+Amounts in results always come as `{ inBaseUnits, inHumanUnits }`. Inputs take `amount` plus `amountUnit` (`human` by default, or `base`).
 
-### `plan_bridge_transfer`
+Tokens are addressed in two ways:
 
-Entry-point planner. Symbol-first input. Protocol-aware: queries Allbridge Core, Allbridge NEXT, or both.
+- by chain and symbol (`sourceChain`, `sourceTokenSymbol`, …) in `plan_bridge_transfer` and `find_bridge_routes`;
+- by address (`sourceTokenAddress`, `destinationTokenAddress`) in the other tools. Native currencies of EVM chains share the placeholder address `0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE`, so pass `sourceChain` / `destinationChain` with them.
 
-Inputs:
-
-- `sourceChain`
-- `destinationChain`
-- `sourceTokenSymbol`
-- `destinationTokenSymbol` (optional)
-- `sourceTokenAddress` / `destinationTokenAddress` (optional; disambiguate when a chain has multiple tokens with the same symbol)
-- `amount`
-- `amountUnit` (`"human"` or `"base"`)
-- `tokenType` (optional; Core only — e.g. `"swap"`)
-- `protocol` (optional; `"core" | "next" | "auto"`, default `"auto"`)
-
-Returns the same envelope regardless of protocol:
-
-```json
-{
-  "protocols": ["core", "next"],
-  "core": { /* Core plan: summary, route, amount, options, recommendedOption, nextAction, bridgePortal* */ } | null,
-  "next": { /* NEXT plan: summary, amount, route, options, bridgePortal* */ } | null,
-  "errors": { "core": {...}, "next": {...} } | null
-}
-```
-
-In `auto` mode both protocols are queried in parallel; partial failures land in `errors`. The tool only returns an `isError: true` result if **both** protocols fail. If the server has no NEXT client configured, `auto` silently degrades to `["core"]`.
-
-Use this as the default entry point even if `find_bridge_routes` or `quote_bridge_transfer` look like a closer match; `plan_bridge_transfer` returns the agent guidance those do not.
+## Discovery
 
 ### `list_supported_chains`
 
-Inputs: `tokenType` (optional).
-
-Returns supported chain symbols, aliases, names, types, and per-chain token counts.
+No input. Returns `chains[]` with `chainSymbol`, `chainName`, `chainType`, `tokenCount` and `aliases` (e.g. `Ethereum`, `Base`, `Tron`).
 
 ### `list_supported_tokens`
 
-Inputs: `tokenType` (optional), `chain` (optional).
+| Input | Notes |
+|-------|-------|
+| `chain` | Optional chain symbol or alias; omit for every chain |
 
-Returns supported token symbols, addresses, decimals, and chain metadata.
+With `chain`, returns that `chain` (with its `aliases`) and its `tokens`; without it, `chains[]`, each with its `tokens`. Token fields: `symbol`, `name`, `tokenAddress`, `decimals`, `chainSymbol`, `chainName`, `chainType`, `isNative`.
 
 ### `find_bridge_routes`
 
-Lower-level route discovery. Use when you already have token addresses and want the raw set of routes between them.
+| Input | Notes |
+|-------|-------|
+| `sourceChain`, `destinationChain` | Required |
+| `sourceTokenSymbol` | Required |
+| `sourceTokenAddress`, `destinationTokenSymbol`, `destinationTokenAddress` | Optional; the destination symbol defaults to the source symbol |
+
+Returns `availableMessengers` for the pair, without quoting.
+
+## Planning
+
+### `plan_bridge_transfer`
+
+Same inputs as `find_bridge_routes` plus `amount` and `amountUnit`. Quotes every available messenger:
+
+- `options[]` — sorted by the amount received. Each option has `messenger`, `kind` (`bridge` or `intent`), `estimatedTimeMs` and `amountToReceive`.
+  - bridge options: `feePaymentOptions[]` with `feePaymentMethod`, `fee` (`asset`: `native`, `source_token` or `abr`) and the `amountToReceive` for that method;
+  - intent options: `provider`, `minAmountToReceive` (NEAR Intents), `allbridgeFee` (LI.FI Intents), `estimated` and `notes`.
+- `recommendedOption` — the first option.
+- `unavailableOptions[]` — messengers that could not quote, with the error `code` and `details` (for example `amount_too_low` with `minAmount`).
+- `bridgePortalDeepLink` — the same transfer in the Allbridge Core web app.
 
 ### `quote_bridge_transfer`
 
-Token-address-first quote for a known pair.
-
-Returns:
-
-- route token details
-- normalized amount
-- quote options
-- `bridgePortalName`, `bridgePortalUrl`, `bridgePortalDeepLink`
+Same output as `plan_bridge_transfer`, addressed by token addresses (`sourceTokenAddress`, `destinationTokenAddress`, optional `sourceChain`, `destinationChain`), `amount`, `amountUnit`.
 
 ### `check_sender_balances`
 
-Preflight for the sender wallet. Never broadcasts anything. Called implicitly by `create_bridge_execution_job` and `build_bridge_transactions`.
+| Input | Notes |
+|-------|-------|
+| token addresses, `amount`, `amountUnit` | As in `quote_bridge_transfer` |
+| `senderAddress` | Validated for the source chain |
+| `messenger` | `CCTP_V2`, `OFT`, `X_RESERVE`, `NEAR_INTENTS`, `LIFI_INTENTS` |
+| `feePaymentMethod` | `WITH_NATIVE_CURRENCY` (default), `WITH_STABLECOIN`, `WITH_ABR`; ignored by intents |
 
-Use this tool when the user asks whether a transfer can proceed, when the sender balance is unknown, or before building any bridge transaction.
+Returns `requiredBalances[]` (`kind`: `source_token`, `source_native`, `fee_native`, `fee_abr`; `requiredBaseUnits`, `availableBaseUnits`, `satisfied`, and `error` when a balance could not be read), `canProceed`, `notes` and `nextAction`. A stablecoin gas fee is deducted from the amount, so it needs no extra balance. Network transaction fees are not included.
 
-Returns:
-
-- source and destination token details
-- normalized amount
-- selected messenger and fee payment method
-- balance requirements for source asset and relayer fee asset
-- `canProceed`
-- `nextAction`
-
-The `requiredBalances` list shows the balance returned by the API, the required amount, and whether each requirement is satisfied. The tool compares balances in base units internally, but the reported `availableHumanUnits` value keeps the API's human-readable token balance.
+## Execution
 
 ### `create_bridge_execution_job`
 
-Builds an ordered, ready-to-sign execution job.
+| Input | Notes |
+|-------|-------|
+| token addresses, `amount`, `amountUnit`, `messenger`, `feePaymentMethod` | As above |
+| `senderAddress`, `recipientAddress` | Validated for their chains |
+| `walletId` | Optional `local-signer-mcp` wallet id, copied into every step |
+| `maxSlippagePercent` | `LIFI_INTENTS` only: accepted drop from the quote before `create_lifi_intents_order` stops, 0 to 5 (default 0.5) |
 
-Inputs:
+Returns the execution job (contract: [handoff.md](./handoff.md)): `quote`, `balanceValidation`, `destinationSetup`, `intent`, ordered `steps[]`, `tracking`, `nextAction` and `bridgePortalDeepLink` (the same transfer in the Allbridge Core web app, for a user who signs in their own wallet). Steps:
 
-- `sourceTokenAddress`
-- `destinationTokenAddress`
-- `senderAddress`
-- `recipientAddress`
-- `amount`, `amountUnit`
-- `messenger`
-- `feePaymentMethod`
-- `walletId` (optional; pins the job to a specific local wallet)
-- `outputFormat` (optional; e.g. `"json"`)
+- `reset_allowance` — Ethereum USDT only, when a non-zero allowance must be reset before approving;
+- `approve` — EVM and Tron tokens without enough allowance (EVM only for `LIFI_INTENTS`); none for native currencies, `NEAR_INTENTS`, or Solana, Stacks and Stellar sources;
+- `bridge` — the transfer. For `LIFI_INTENTS` it has `transaction: null` and a `build` block.
 
-Returns:
+### `create_lifi_intents_order`
 
-- `jobId`
-- ordered `steps`
-- per-step transaction payloads
-- top-level and per-step `handoff` metadata
-- `walletSelector` hints
-- `tracking`
-- `destinationSetup` hints when the destination chain is Stellar or Algorand
-- a source-chain history URL template
-- `summary`
-- `bridgePortalName`, `bridgePortalUrl`, `bridgePortalDeepLink`
+Build step for LI.FI Intents. Takes the job bridge step `build.arguments`: token addresses and chains, `senderAddress`, `recipientAddress`, `amount`, `amountUnit`, `minAmountToReceive` (destination base units), optional `walletId`. Without `minAmountToReceive` there is no `price_changed` check, so always pass the one from the job.
 
-### `build_bridge_transactions`
+Returns `order` (`orderId`, `validUntil`, `fillDeadline`, `secondsToSign`), the order `quote`, a signer-ready `step` and `tracking` (`explorerTransferId` is the order id). Stops with:
 
-Lower-level transaction builder. Use it when you want raw approval and bridge transactions without the higher-level job wrapper, e.g. for debugging or when integrating with a custom execution pipeline.
+- `approval_required` — the allowance for the LI.FI Intents bridge is missing (the approve step has not confirmed);
+- `price_changed` — the order pays less than `minAmountToReceive`; `details.orderAmountToReceive` has the new amount;
+- `validation_error` — the transaction does not call the Allbridge `LifiIntentsBridge` contract from the sender, or the order asks for an approval to another spender.
 
-Returns raw approval and bridge transactions, transaction shape hints, approval requirement metadata, the same `destinationSetup` hints as the job tool, and the balance validation summary used to build them.
+### `submit_near_intents_deposit`
 
-Balance validation is advisory in this tool. If you want a hard preflight before signing, call `check_sender_balances` first and inspect `canProceed`.
+| Input | Notes |
+|-------|-------|
+| `depositAddress`, `depositMemo` | From the job `intent.submitDepositArguments` |
+| `txId` | Hash of the broadcast deposit transaction |
 
-### `get_transfer_status`
-
-Inputs: `sourceChain`, `txId`.
-
-Returns:
-
-- source and destination chain symbols
-- signature progress
-- send transaction details
-- receive transaction details when available
-- a direct Allbridge history URL when the source chain and source transaction hash are known
-
-### `search_allbridge_transfers`
-
-Inputs (all optional): `query`, `account`, `chain`, `from`, `to`, `minFromAmount`, `maxFromAmount`, `status`, `page`, `limit`.
-
-Searches or lists transfers through the public explorer:
-
-- `query` resolves typed hits
-- address hits expand into transfer history without forcing a chain
-- direct filters such as `account`, `chain`, `from`, `to`, `status`, `minFromAmount`, `maxFromAmount`, `page`, and `limit` list matching transfers directly
-- `account` can be queried on its own; no chain is required when you want all transfers for one address across chains
-- `status` is normalized to explorer values such as `Complete` and `Pending`
-
-If you want to focus the account history to one chain or one direction, add `chain`, `from`, or `to`.
-
-Omit the query to list recent transfers.
-
-Returns typed explorer hits, matched transfer summaries, explorer URL per transfer, the direct Allbridge history URL when available, and the fields that matched the search query.
-
-### `get_allbridge_transfer`
-
-Inputs: `transferId`.
-
-Returns the normalized transfer summary, the raw explorer record, the explorer URL, and the direct Allbridge history URL when the source chain and source transaction hash are available.
-
-## Allbridge NEXT
-
-Native NEXT-only tools. Inputs and outputs use the NEXT API contract directly (`tokenId`-first). For unified Core+NEXT planning, use `plan_bridge_transfer` with `protocol: "auto"` instead.
-
-### `list_next_chains`
-
-Inputs: none.
-
-Returns the unique chain symbols supported by the NEXT token catalog (derived from `/tokens`).
-
-### `list_next_tokens`
-
-Inputs: `chain` (optional, case-insensitive filter by chain symbol).
-
-Returns the NEXT token list. Each entry: `tokenId`, `chain`, `symbol`, `address`, `decimals`, `isNative?`.
-
-### `quote_next_swap`
-
-Inputs:
-
-- `sourceTokenId`, `destinationTokenId` (NEXT tokenIds, e.g. from `list_next_tokens`)
-- `amount` (source token base units, integer string)
-
-Returns `routes`: an array of `RouteResponse` (`amount`, `amountOut`, `relayerFees[]`, plus messenger and intermediary metadata). The whole route object must be passed back to `build_next_transaction` unchanged.
-
-### `build_next_transaction`
-
-Inputs:
-
-- the full chosen `RouteResponse` fields (`sourceTokenId`, `destinationTokenId`, `messenger`, `sourceSwap?`, `sourceIntermediaryTokenId?`, `destinationIntermediaryTokenId?`, `destinationSwap?`, `estimatedTime?`)
-- `amount` (source token base units, integer string)
-- `sourceAddress`, `destinationAddress`
-- `relayerFee` — required for non `near-intents` messengers
-- `refundTo` (optional; only meaningful when `messenger === "near-intents"`)
-- `metadata` (optional; opaque pass-through, e.g. referral code)
-
-Returns `transaction`: `{ amountOut, amountMin, tx: { contractAddress, value, tx? } }`. The transaction is unsigned; pair with `local-signer-mcp` (or any external signer) and broadcast via the chain-family broadcaster.
-
-## Destination Prerequisites
-
-These exist because Stellar and Algorand require the recipient account to opt into an asset before it can receive it.
-
-### `check_stellar_trustline`
-
-Verifies that the recipient Stellar account already holds a trustline for the destination token.
-
-### `build_stellar_trustline_transaction`
-
-Builds the trustline transaction when `check_stellar_trustline` says it is missing. The payload is meant to be signed by the Stellar account holder, not by the sender.
-
-### `check_algorand_optin`
-
-Verifies that the recipient Algorand account is already opted into the destination asset or app.
-
-### `build_algorand_optin_transaction`
-
-Builds the opt-in transaction when `check_algorand_optin` reports it is missing.
-
-## Broadcast
+Optional: tells NEAR Intents about the deposit so it is detected sooner.
 
 ### `broadcast_signed_transaction`
 
-Broadcasts an already-signed transaction.
+| `chainFamily` | Payload |
+|---------------|---------|
+| `EVM` | `chainId`, optional `chainSymbol`, `signedTransaction` (hex) |
+| `SOLANA` | `signedTransactionHex` |
+| `TRX` | `signedTransaction` (signed transaction object) |
+| `STX` | `signedTransactionHex` |
+| `SRB` | `signedTransactionXdr` |
 
-Inputs depend on the chain family:
+Returns `txHash` and a `receipt` when the chain provides one. The payload is validated against its family before broadcasting.
 
-- EVM: `chainFamily: "EVM"`, `chainId`, optional `chainSymbol`, optional `walletId`, `signedTransaction` (hex string).
-- Solana: `chainFamily: "SOLANA"`, optional `walletId`, `signedTransactionHex`.
-- Tron, Algorand, Stacks, Soroban / Stellar, Sui: same shape with family-appropriate signed payload.
+## Recipient Setup
 
-Returns `txHash` and `receipt` when available.
+### `check_stellar_trustline`
 
-RPC resolution (EVM):
+`address`, `tokenAddress` (a non-native Stellar token from `list_supported_tokens`). Returns `required` (true when the trustline is missing) and the balance line.
 
-1. `ALLBRIDGE_EVM_RPC_URL_<walletId>` when `walletId` is present
-2. `ALLBRIDGE_EVM_RPC_URL_<chainSymbol>`
-3. `ALLBRIDGE_EVM_RPC_URL_<chainId>`
-4. `ALLBRIDGE_EVM_RPC_URL`
+### `build_stellar_trustline_transaction`
 
-For non-EVM families, set the matching `ALLBRIDGE_<FAMILY>_RPC_URL` variable.
+`accountAddress`, `tokenAddress`, optional `limit` and `walletId`. Returns an unsigned Stellar `changeTrust` transaction the recipient signs.
 
-Include `walletId` on the signed payload when more than one wallet exists for the family so the broadcast layer can pick deterministically.
+## Tracking
+
+### `get_transfer_status`
+
+`sourceChain`, `txId` (the bridge step transaction hash). Returns `state` (`pending`, `completed`, `refunded`, or `not_found` while the Core API has not indexed the transaction), the send and receive transactions, refund details (`refundTxId`, `refundedAmount`) and `historyUrl`.
+
+### `search_allbridge_transfers`
+
+Either `query` (address, transaction hash or transfer id) or list filters, not both. Filters: `account`, `chain` or `from` / `to`, `status` (`Complete`, `Pending`), `minFromAmount`, `maxFromAmount`, `page` (default 1), `limit` (default 10, at most 20). Returns normalized transfers with the raw explorer record.
+
+### `get_allbridge_transfer`
+
+`transferId`. Returns one explorer transfer with its transactions.

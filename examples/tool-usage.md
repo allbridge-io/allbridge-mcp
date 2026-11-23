@@ -1,215 +1,135 @@
 # Tool Usage Examples
 
-## 1. Inspect supported chains and tokens
+Request payloads for each tool. Full responses and the end-to-end flow are in [`docs/usage.md`](../docs/usage.md).
 
-Request:
+## Discover
+
+```json
+{ "name": "list_supported_chains", "arguments": {} }
+```
+
+```json
+{ "name": "list_supported_tokens", "arguments": { "chain": "Base" } }
+```
+
+```json
+{ "name": "find_bridge_routes", "arguments": { "sourceChain": "TRX", "destinationChain": "ARB", "sourceTokenSymbol": "USDT", "destinationTokenSymbol": "USD₮0" } }
+```
+
+## Plan
+
+```json
+{ "name": "plan_bridge_transfer", "arguments": { "sourceChain": "ARB", "destinationChain": "SOL", "sourceTokenSymbol": "USDC", "amount": "50" } }
+```
+
+Native currency (shared EVM address, so the chain is required with addresses):
 
 ```json
 {
-  "name": "list_supported_chains",
+  "name": "quote_bridge_transfer",
   "arguments": {
-    "tokenType": "swap"
+    "sourceTokenAddress": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
+    "sourceChain": "ARB",
+    "destinationTokenAddress": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
+    "destinationChain": "BAS",
+    "amount": "0.01"
   }
 }
 ```
 
-Expected result:
-
-- supported chain symbols and aliases
-- chain names and types
-- token counts per chain
-
-Request:
-
 ```json
 {
-  "name": "list_supported_tokens",
+  "name": "check_sender_balances",
   "arguments": {
-    "tokenType": "swap",
-    "chain": "Ethereum"
+    "sourceTokenAddress": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+    "destinationTokenAddress": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+    "senderAddress": "0x1111111111111111111111111111111111111111",
+    "amount": "10",
+    "messenger": "CCTP_V2",
+    "feePaymentMethod": "WITH_NATIVE_CURRENCY"
   }
 }
 ```
 
-Expected result:
-
-- supported token symbols and addresses for the selected chain
-- token decimals and chain metadata
-
-## 2. Plan a bridge transfer
-
-Request:
-
-```json
-{
-  "name": "plan_bridge_transfer",
-  "arguments": {
-    "sourceChain": "ETH",
-    "destinationChain": "SOL",
-    "amount": "1",
-    "amountUnit": "human",
-    "tokenType": "swap",
-    "sourceTokenSymbol": "USDC"
-  }
-}
-```
-
-Expected result (envelope `{ protocols, core, next, errors }`):
-
-- `protocols`: which protocols were queried (defaults to both Core and NEXT)
-- `core` (when present): normalized amount, route details, available messengers, recommended quote option, next-action guidance
-- `next` (when present): normalized amount, NEXT route details, NEXT route options
-- `errors`: per-protocol failure descriptors when running `auto` and one protocol fails
-
-Pass `protocol: "core"` or `protocol: "next"` to scope to a single protocol when the user has explicitly pinned one.
-
-## 3. Create an execution job
-
-Request:
+## Execute
 
 ```json
 {
   "name": "create_bridge_execution_job",
   "arguments": {
-    "sourceTokenAddress": "0xsource",
-    "destinationTokenAddress": "0xdestination",
-    "senderAddress": "0xsender",
-    "walletId": "MAINNET",
-    "recipientAddress": "0xrecipient",
-    "amount": "1",
-    "amountUnit": "human",
-    "messenger": "ALLBRIDGE",
-    "feePaymentMethod": "WITH_NATIVE_CURRENCY",
-    "outputFormat": "json"
+    "sourceTokenAddress": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+    "destinationTokenAddress": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+    "senderAddress": "0x1111111111111111111111111111111111111111",
+    "recipientAddress": "0x1111111111111111111111111111111111111111",
+    "amount": "100",
+    "messenger": "LIFI_INTENTS",
+    "maxSlippagePercent": 0.5,
+    "walletId": "MAIN"
   }
 }
 ```
 
-Expected result:
+Pass a step transaction to the signer as is:
 
-- `jobId`
-- `summary`
-- top-level `handoff` metadata
-- ordered `steps`
-- `tracking`
-- `nextAction`
+```json
+{ "name": "sign_and_broadcast_transaction", "arguments": { "chainFamily": "EVM", "chainId": 42161, "chainSymbol": "ARB", "walletId": "MAIN", "from": "0x1111…", "to": "0xaf88…", "data": "0x095ea7b3…", "value": "0" } }
+```
 
-Example source-family coverage:
-
-- Solana source routes produce a `handoff.walletSelector.chainFamily` of `SOLANA`
-- Tron source routes produce a `handoff.walletSelector.chainFamily` of `TRX`
-- EVM source routes produce a `handoff.walletSelector.chainFamily` of `EVM`
-
-Each step also includes:
-
-- `handoff.executionTarget`
-- `handoff.executionTool`
-- `handoff.broadcastTarget`
-- `handoff.broadcastTool`
-- `handoff.walletSelector`
-- `handoff.transactionShape`
-
-## 4. Track the transfer
-
-Request:
+LI.FI Intents bridge step, right before signing:
 
 ```json
 {
-  "name": "get_transfer_status",
+  "name": "create_lifi_intents_order",
   "arguments": {
-    "sourceChain": "ETH",
-    "txId": "0xsourceTransactionHash"
+    "sourceTokenAddress": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+    "sourceChain": "ARB",
+    "destinationTokenAddress": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+    "destinationChain": "BAS",
+    "senderAddress": "0x1111111111111111111111111111111111111111",
+    "recipientAddress": "0x1111111111111111111111111111111111111111",
+    "amount": "100000000",
+    "amountUnit": "base",
+    "minAmountToReceive": "99383169"
   }
 }
 ```
 
-Expected result:
-
-- send details
-- receive details when available
-- signature progress
-- source and destination chain symbols
-
-## 5. Broadcast an already signed transaction
-
-Request:
+NEAR Intents, after broadcasting the deposit:
 
 ```json
-{
-  "name": "broadcast_signed_transaction",
-  "arguments": {
-    "chainFamily": "EVM",
-    "chainId": 11155111,
-    "chainSymbol": "ETH",
-    "walletId": "MAINNET",
-    "signedTransaction": "0xdeadbeef"
-  }
-}
+{ "name": "submit_near_intents_deposit", "arguments": { "depositAddress": "0xbC56…1e5D", "txId": "0x…" } }
 ```
 
-Expected result:
-
-- `txHash`
-- `receipt`
-
-Requirements:
-
-- configure the RPC URL for the selected chain family
-- include `walletId` when more than one wallet exists for that family
-- pass the matching signed payload shape for that family
-
-## 6. Broadcast an already signed Solana transaction
-
-Request:
+Broadcast a transaction signed elsewhere:
 
 ```json
-{
-  "name": "broadcast_signed_transaction",
-  "arguments": {
-    "chainFamily": "SOLANA",
-    "walletId": "SOL_MAIN",
-    "signedTransactionHex": "0xdeadbeef"
-  }
-}
+{ "name": "broadcast_signed_transaction", "arguments": { "chainFamily": "SOLANA", "signedTransactionHex": "01ab…" } }
 ```
 
-Expected result:
-
-- `txHash`
-- `receipt`
-
-Requirements:
-
-- configure `ALLBRIDGE_SOL_RPC_URL`
-- include `walletId` when more than one Solana wallet exists
-- pass a Solana signed transaction in hex form
-
-## 7. Hand off a job step to `local-signer-mcp`
-
-`allbridge-mcp` returns the execution step. A client can then send that step to `local-signer-mcp` for signing and optional broadcast.
-
-Request:
+## Recipient setup
 
 ```json
-{
-  "name": "sign_and_broadcast_transaction",
-  "arguments": {
-    "chainFamily": "SOLANA",
-    "walletId": "SOL_MAIN",
-    "serializedTransactionHex": "0xdeadbeef"
-  }
-}
+{ "name": "check_stellar_trustline", "arguments": { "address": "GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN", "tokenAddress": "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75" } }
 ```
 
-Expected result:
+```json
+{ "name": "build_stellar_trustline_transaction", "arguments": { "accountAddress": "GA5Z…", "tokenAddress": "CCW6…" } }
+```
 
-- signed payload and/or `txHash`, depending on the signer path
+## Track
 
-Requirements:
+```json
+{ "name": "get_transfer_status", "arguments": { "sourceChain": "BSC", "txId": "0x5121170758690f871d667d33e47e0641c6397ad2b691f7b8af7a15bdd126f5b7" } }
+```
 
-- run `local-signer-mcp` alongside `allbridge-mcp`
-- pass the unsigned step payload returned by `create_bridge_execution_job`
-- include `walletId` when multiple wallets exist for the same family
-- include `walletId` on `create_bridge_execution_job` when you want the job pinned to a specific wallet
+```json
+{ "name": "search_allbridge_transfers", "arguments": { "query": "0x5121170758690f871d667d33e47e0641c6397ad2b691f7b8af7a15bdd126f5b7" } }
+```
 
-The same step can also be broadcast later with `allbridge-mcp.broadcast_signed_transaction` if the client only signs locally and submits separately.
+```json
+{ "name": "search_allbridge_transfers", "arguments": { "from": "ETH", "to": "TRX", "status": "Complete", "limit": 5 } }
+```
+
+```json
+{ "name": "get_allbridge_transfer", "arguments": { "transferId": "0x9df22df8986ce94ce5b66f41bfddc54c304ddeaf61b2883a0aa2f4d6829a625e" } }
+```

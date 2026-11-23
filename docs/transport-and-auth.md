@@ -52,8 +52,10 @@ Static bearer token.
 
 ```env
 MCP_AUTH_MODE=bearer
-MCP_BEARER_TOKEN=replace-me
+MCP_BEARER_TOKEN=<random token of at least 16 characters, e.g. openssl rand -hex 32>
 ```
+
+A shorter token stops the server at startup.
 
 Every HTTP request must carry:
 
@@ -65,7 +67,7 @@ Use bearer mode when the client can store and send a fixed token (hosted agents,
 
 ### `oauth`
 
-Full OAuth 2.1 discovery and authorization-code exchange.
+OAuth 2.1 discovery with dynamic client registration, the authorization-code flow (PKCE), refresh tokens and the client-credentials grant.
 
 ```env
 MCP_AUTH_MODE=oauth
@@ -76,8 +78,8 @@ MCP_OAUTH_SCOPE=allbridge.mcp
 
 The server exposes:
 
-- `GET /.well-known/oauth-protected-resource`
-- `GET /.well-known/oauth-authorization-server`
+- `GET /.well-known/oauth-protected-resource` (also at `/.well-known/oauth-protected-resource/mcp` and `/mcp/.well-known/oauth-protected-resource`)
+- `GET /.well-known/oauth-authorization-server` (also at `/mcp/.well-known/oauth-authorization-server`)
 - `POST /register`
 - `GET /authorize`
 - `POST /authorize`
@@ -91,7 +93,11 @@ Lifetimes are tunable:
 | `MCP_OAUTH_REFRESH_TOKEN_TTL_SECONDS` | `2592000` | Refresh token lifetime |
 | `MCP_OAUTH_AUTH_CODE_TTL_SECONDS` | `600` | Authorization code lifetime |
 
-`MCP_PUBLIC_BASE_URL` is the HTTPS base the discovery documents advertise. It needs to match the external URL the client resolves, otherwise redirect and token exchange will fail.
+`MCP_PUBLIC_BASE_URL` is the HTTPS base the discovery documents advertise; only its origin is used. It needs to match the external URL the client resolves, otherwise redirect and token exchange will fail. When it is unset, the server derives the base from the `Host` and `X-Forwarded-Proto` headers.
+
+Registered clients and issued tokens live in memory: a restart invalidates them, and clients have to connect again.
+
+`GET /healthz` answers without auth in every mode, for container and load balancer health checks.
 
 ## HTTPS
 
@@ -99,18 +105,18 @@ Lifetimes are tunable:
 
 ## Docker
 
-The published image runs in `stdio` by default. To expose HTTP:
+Build the image from the repository. It runs `streamable-http` on `0.0.0.0:3000` by default (`MCP_TRANSPORT`, `MCP_HOST` and `MCP_PORT` are set in the image), with no auth unless you set it:
 
 ```bash
+docker build -t allbridge-mcp .
 docker run --rm -p 3000:3000 \
-  -e MCP_TRANSPORT=streamable-http \
-  -e MCP_HOST=0.0.0.0 \
-  -e MCP_PORT=3000 \
   -e MCP_AUTH_MODE=bearer \
-  -e MCP_BEARER_TOKEN=replace-me \
-  -e ALLBRIDGE_API_BASE_URL=http://host.docker.internal:3000 \
-  allbridge/io.allbridge.mcp:latest
+  -e MCP_BEARER_TOKEN=<random token of at least 16 characters> \
+  -e ALLBRIDGE_ETH_RPC_URL=https://your-eth-rpc.example.com \
+  allbridge-mcp
 ```
+
+To use the image as a local stdio server, pass `-i -e MCP_TRANSPORT=stdio` (see [client-integrations.md](./client-integrations.md#docker-based-client-registration)).
 
 ## Choosing
 
@@ -123,5 +129,5 @@ docker run --rm -p 3000:3000 \
 ## Security Notes
 
 - HTTP mode with `MCP_AUTH_MODE=none` on a public interface is unsafe. Bind to `127.0.0.1` or require auth.
-- `allbridge-mcp` itself does not hold signing keys, so leaking an access token only exposes REST API calls through the MCP, not private keys. Local signing keys live in [`local-signer-mcp`](https://github.com/allbridge-io/local-signer-mcp).
+- `allbridge-mcp` itself does not hold signing keys, so leaking an access token only exposes Allbridge Core API calls and your configured RPCs through the MCP, not private keys. Local signing keys live in [`local-signer-mcp`](https://github.com/allbridge-io/local-signer-mcp).
 - Broadcast endpoints require a reachable RPC per family. Do not advertise those RPC URLs as trusted; the server calls them outbound only.

@@ -1,35 +1,33 @@
+#!/usr/bin/env node
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 
-import { AllbridgeApiClient } from './allbridge-api-client.js';
-import { AllbridgeExplorerApiClient } from './explorer-api-client.js';
+import { broadcastSignedTransactionByFamily } from './chain-broadcast.js';
 import { config } from './config.js';
+import { createSdkGateway } from './core-gateway.js';
+import { AllbridgeExplorerApiClient } from './explorer-api-client.js';
 import { startStreamableHttpServer } from './http-server.js';
-import { NextApiClient } from './next-api-client.js';
-import { registerNextTools } from './next-tools.js';
-import { registerAllbridgeTools } from './tools.js';
+import { SERVER_INSTRUCTIONS } from './server-instructions.js';
+import { PACKAGE_VERSION } from './version.js';
+import { createToolContext, registerAllbridgeTools } from './tools/index.js';
+
+const toolContext = createToolContext({
+  gateway: createSdkGateway({
+    coreApiUrl: config.ALLBRIDGE_CORE_API_URL,
+    sorobanNetworkPassphrase: config.ALLBRIDGE_SRB_NETWORK_PASSPHRASE,
+  }),
+  explorer: new AllbridgeExplorerApiClient(config.ALLBRIDGE_CORE_API_URL, config.ALLBRIDGE_API_TIMEOUT_MS),
+  explorerBaseUrl: config.ALLBRIDGE_CORE_API_URL,
+  broadcastSignedTransactionByFamily,
+});
 
 function createServer(): McpServer {
-  const server = new McpServer({
-    name: 'allbridge-mcp',
-    version: '0.1.0',
-  });
-
-  const apiClient = new AllbridgeApiClient(
-    config.ALLBRIDGE_API_BASE_URL,
-    config.ALLBRIDGE_API_TIMEOUT_MS,
-  );
-  const explorerClient = new AllbridgeExplorerApiClient(
-    config.ALLBRIDGE_EXPLORER_API_BASE_URL,
-    config.ALLBRIDGE_API_TIMEOUT_MS,
-  );
-  const nextClient = new NextApiClient(
-    config.ALLBRIDGE_NEXT_API_BASE_URL,
-    config.ALLBRIDGE_API_TIMEOUT_MS,
+  const server = new McpServer(
+    { name: 'allbridge-mcp', version: PACKAGE_VERSION },
+    { instructions: SERVER_INSTRUCTIONS },
   );
 
-  registerAllbridgeTools(server, apiClient, explorerClient, undefined, nextClient);
-  registerNextTools(server, nextClient);
+  registerAllbridgeTools(server, toolContext);
 
   return server;
 }

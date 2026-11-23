@@ -1,88 +1,46 @@
 # Allbridge Bridge Flow
 
-Use this MCP server for bridge planning and execution only. Do not use it for docs consulting or signing setup guidance when the question is about the repository, SDK, or integration examples; use `allbridge-dev-mcp` for that.
+Use this MCP server to plan, build and track Allbridge Core transfers. It never signs: pair it with `local-signer-mcp` (or any external signer) for signing. For questions about the repository, the SDK or integration code, use `allbridge-dev-mcp` instead.
 
 ## Use This Server When
 
-Use `allbridge-mcp` when the task is to:
-
-- discover bridgeable routes
-- evaluate quote options
-- validate sender balances before execution
-- build an execution job or raw bridge transactions
-- handle destination prerequisites such as Stellar trustlines or Algorand opt-ins
-- track bridge transfers
-- inspect past transfer history through the explorer
-
-Do not use it as a wallet signer.
+- the user wants to move tokens between chains
+- you need the supported chains, tokens or routes
+- you need quotes, fees or the expected received amount
+- you need to check the sender's balance before a transfer
+- you need ready-to-sign transactions for a transfer
+- the recipient needs a Stellar trustline
+- you need the status of a transfer or its history in the explorer
 
 ## Default Workflow
 
-1. Call `plan_bridge_transfer`. The default `protocol: "auto"` returns options for both Allbridge Core and Allbridge NEXT side by side under `core` and `next` keys; pass `protocol: "core"` or `"next"` only when the user explicitly pins a protocol.
-2. If the token symbol is ambiguous on the chain, supply the exact token address before planning again.
-3. Review the options under `core` and/or `next`. Decide between protocols based on what the user cares about (output amount, speed, supported messengers, fee asset).
-4. **If the user picks a Core route:**
-   1. Call `check_sender_balances` as a sender balance preflight.
-   2. If the preflight says balances are short, warn the user. Do not treat that response as a hard stop unless the user wants you to stop.
-   3. Call `create_bridge_execution_job` for the normal execution path.
-   4. Use `build_bridge_transactions` only when you need the lower-level raw transaction flow.
-   5. Hand each step to `local-signer-mcp` or another signer.
-   6. Use `broadcast_signed_transaction` for already-signed payloads.
-5. **If the user picks a NEXT route:**
-   1. Pass the chosen route plus `sourceAddress`, `destinationAddress`, and the chosen `relayerFee` to `build_next_transaction`.
-   2. Hand the unsigned `tx` to a signer.
-   3. Use `broadcast_signed_transaction` for the signed payload.
-6. Call `get_transfer_status` (Core) or track on the source chain explorer (NEXT) until the transfer reaches a terminal state.
+1. **Plan.** Call `plan_bridge_transfer` with the chains, token symbol and amount. If a symbol is ambiguous on a chain, pass the exact token address. Options are sorted by the amount received; `unavailableOptions` explains messengers that cannot quote (amount limits, no liquidity).
+2. **Choose with the user.** Show the amount to receive, the time and the fees. For bridge messengers (`CCTP_V2`, `OFT`, `X_RESERVE`) also choose the fee payment method. For intent messengers (`NEAR_INTENTS`, `LIFI_INTENTS`) explain that they are market-priced and refund the sender if they cannot complete.
+3. **Collect addresses.** Ask for the sender and recipient addresses. Never invent them; with `local-signer-mcp`, `get_accounts` lists the local wallets.
+4. **Build the job.** Call `create_bridge_execution_job` with the token addresses (and `sourceChain` / `destinationChain` for native currencies, which share an address across EVM chains), the addresses, the amount, the messenger and the fee payment method. For `LIFI_INTENTS`, `maxSlippagePercent` (default 0.5, at most 5) sets how far the order may price below the quote.
+5. **Check the job.** If `balanceValidation.canProceed` is false, tell the user what is missing. If `destinationSetup.required` is true, the recipient must act first (for Stellar, sign `build_stellar_trustline_transaction`). If it is null, the check could not run: relay `destinationSetup.reason` to the user.
+6. **Execute the steps in order.** Pass each step's `transaction` to `local-signer-mcp` `sign_and_broadcast_transaction`. Wait for a step with `waitForConfirmation: true` to confirm before the next one.
+7. **Track.** Call `get_transfer_status` with the source chain and the bridge step transaction hash. `state` is `pending`, `completed`, `refunded` or `not_found` (not indexed yet: retry in 30-60 seconds).
+
+## Intent Messengers
+
+- **NEAR_INTENTS.** The job creates a one-time deposit and its bridge step is a plain transfer to the deposit address. Send it before `intent.deadline`. After broadcasting, you may call `submit_near_intents_deposit` with `intent.submitDepositArguments` and the real transaction hash.
+- **LIFI_INTENTS.** The bridge step has `transaction: null` and a `build` block. After any approve step confirms, call `create_lifi_intents_order` with `build.arguments` and sign the returned `step.transaction` immediately: the order is valid for 40-120 seconds (`order.secondsToSign`). On `price_changed`, show the new amount and call again with the new `minAmountToReceive` only if the user accepts. On `approval_required`, the approve step has not confirmed yet.
+
+## Without A Signer
+
+If no signer MCP is connected, or you do not sign transactions yourself, do not end with a refusal. Give the user `bridgePortalDeepLink` from `plan_bridge_transfer` or the job: it opens the same transfer (chains, tokens, amount, messenger) in the Allbridge Core web app. Tell them to connect their own wallet, check the recipient (the link does not carry it) and the fee payment method, and sign there. Once they share the transaction hash, track it with `get_transfer_status`.
 
 ## Rules
 
-- Prefer `plan_bridge_transfer` over directly calling lower-level quote and route tools. Default `protocol: "auto"` returns options from both Core and NEXT in one call.
-- Use `protocol: "core"` or `protocol: "next"` only when the user explicitly pins a protocol.
-- The `plan_bridge_transfer` response is always wrapped: `{ protocols, core, next, errors }`. Read fields from `result.core.*` / `result.next.*`. Both protocols may be present, only one, or neither (when both fail).
-- For NEXT-only flows: `list_next_chains`, `list_next_tokens`, `quote_next_swap`, `build_next_transaction`. NEXT uses `tokenId` (not address) as primary identifier.
-- NEXT does not have an execution-job equivalent. After `build_next_transaction`, sign and broadcast directly.
-- Prefer `check_sender_balances` before `create_bridge_execution_job` and `build_bridge_transactions`.
-- Treat `check_sender_balances` as advisory preflight, not a hard blocker.
-- Prefer `create_bridge_execution_job` over manually assembling the raw transaction flow.
-- Treat `build_bridge_transactions` as a lower-level tool for debugging and custom integration work.
-- Use `broadcast_signed_transaction` only for already signed payloads with a supported `chainFamily`.
-- Do not assume a single-step flow. Approval and bridge can be separate steps.
-- Do not assume bridge execution is EVM-only. The source chain family can be EVM, Solana, Tron, Algorand, Stacks, Soroban/Stellar, or Sui, and the returned handoff reflects that family.
-- For destination chains that need account setup, use `check_stellar_trustline` / `build_stellar_trustline_transaction` or `check_algorand_optin` / `build_algorand_optin_transaction` before the main bridge step when `destinationSetup.required` is true.
-- Do not mark a transfer complete until `get_transfer_status` shows the receive side or another terminal transfer state.
-- Use `search_allbridge_transfers` for account history, transfer search, and explorer filtering.
-- Use `get_allbridge_transfer` when the transfer ID is already known.
-- When more than one wallet exists for a family, include `walletId` on the signed payload so the correct wallet can be selected deterministically.
-- For EVM, resolve broadcast RPC by `walletId` first when present, then by `chainSymbol`, then `chainId`, then the default RPC env var.
+- Confirm the route, amount, recipient and fees with the user before signing anything.
+- Do not reuse an old job: Solana and Tron transactions expire about a minute after they are built (the local signer refreshes unsigned ones), NEAR deposits have a deadline and LI.FI orders last seconds. When in doubt, build a new job.
+- Amounts are human units by default (`amountUnit: "human"`); results always give both `inBaseUnits` and `inHumanUnits`.
+- `feePaymentMethod: WITH_STABLECOIN` deducts the gas fee from the amount; `WITH_NATIVE_CURRENCY` needs the native currency on top.
+- On `rpc_unavailable` or rate-limit errors, the operator should set `ALLBRIDGE_<CHAIN>_RPC_URL`.
 
-## Expected Inputs
+## Do Not
 
-Planning usually requires:
-
-- source chain
-- destination chain
-- token symbol or token address
-- amount
-- sender address
-- recipient address
-- confirm source token and destination token when the route is ambiguous or when the UI needs explicit token selection
-
-Execution job creation usually requires:
-
-- source token address
-- destination token address
-- sender address
-- recipient address
-- amount
-- chosen messenger
-- chosen fee payment method
-
-## Expected Outputs
-
-The normal output of this MCP is one of:
-
-- a route and quote plan
-- an execution job
-- a broadcast result for a signed transaction
-- a transfer status payload
-- an explorer transfer record or filtered transfer list
+- Do not sign, and do not ask the user for private keys.
+- Do not call `create_lifi_intents_order` before the approve step has confirmed, or long before signing.
+- Do not treat `not_found` from `get_transfer_status` as a failure right after broadcasting.

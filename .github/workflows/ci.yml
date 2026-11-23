@@ -1,0 +1,92 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  NODE_VERSION: '24'
+
+jobs:
+  validate:
+    name: Validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.2
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm test
+      - run: pnpm build
+
+  # Releases are cut by bumping "version" in package.json in a PR: every push to master publishes
+  # that version unless it is already on npm, then tags it and creates a GitHub release.
+  release:
+    name: Release
+    needs: [validate]
+    if: github.repository == 'allbridge-io/allbridge-mcp' && github.event_name == 'push' && github.ref_name == 'master'
+    runs-on: ubuntu-latest
+    environment: npm-registry
+    permissions:
+      contents: write # git tag and GitHub release
+      id-token: write # npm trusted publishing (OIDC)
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Check whether this version is on npm
+        id: version
+        run: |
+          name=$(node -p "require('./package.json').name")
+          version=$(node -p "require('./package.json').version")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if npm view "$name@$version" version >/dev/null 2>&1; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "$name@$version is already on npm, nothing to release."
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+            echo "Releasing $name@$version."
+          fi
+
+      - if: steps.version.outputs.publish == 'true'
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.2
+      - if: steps.version.outputs.publish == 'true'
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - if: steps.version.outputs.publish == 'true'
+        run: pnpm install --frozen-lockfile
+
+      - if: steps.version.outputs.publish == 'true'
+        name: Update npm CLI (OIDC trusted publishing requires npm >= 11.5.1)
+        run: npm install -g npm@latest
+
+      - if: steps.version.outputs.publish == 'true'
+        name: Publish to npm
+        # Auth is OIDC trusted publishing (id-token: write), no NPM_TOKEN. npm adds provenance on its own;
+        # it requires package.json "repository.url" to match this public repository. prepack builds dist.
+        run: npm publish --access public
+
+      - if: steps.version.outputs.publish == 'true'
+        name: Tag and create a GitHub release
+        run: gh release create "v${{ steps.version.outputs.version }}" --target "$GITHUB_SHA" --title "v${{ steps.version.outputs.version }}" --generate-notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

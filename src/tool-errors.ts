@@ -6,7 +6,13 @@ export type ToolErrorCode =
   | 'invalid_amount'
   | 'invalid_address'
   | 'unsupported_route'
-  | 'insufficient_balance'
+  | 'amount_too_low'
+  | 'amount_too_high'
+  | 'quote_unavailable'
+  | 'price_changed'
+  | 'approval_required'
+  | 'rpc_unavailable'
+  | 'upstream_error'
   | 'validation_error';
 
 export type ToolErrorDetails = Record<string, unknown>;

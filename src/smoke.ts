@@ -1,152 +1,94 @@
+/**
+ * Smoke test against the live Allbridge Core API: starts the built server over stdio, plans a
+ * transfer, builds an execution job and validates it against the job contract. Never signs or sends.
+ *
+ * Defaults: 10 USDC from Ethereum to Arbitrum through CCTP_V2. Override with SMOKE_* variables:
+ * SMOKE_SOURCE_CHAIN, SMOKE_DESTINATION_CHAIN, SMOKE_TOKEN_SYMBOL, SMOKE_DESTINATION_TOKEN_SYMBOL,
+ * SMOKE_AMOUNT, SMOKE_MESSENGER, SMOKE_FEE_PAYMENT_METHOD, SMOKE_SENDER_ADDRESS,
+ * SMOKE_RECIPIENT_ADDRESS, and SMOKE_TX_ID (with SMOKE_SOURCE_CHAIN) to also check a transfer status.
+ */
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
-import { readFileSync } from 'node:fs';
 
 import { validateBridgeExecutionJobContract } from './execution-job-contract.js';
+import { PACKAGE_VERSION } from './version.js';
 
-type SmokeConfig = {
-  apiBaseUrl: string;
-  sourceTokenAddress: string;
-  destinationTokenAddress: string;
-  senderAddress: string;
-  recipientAddress: string;
-  amount: string;
-  amountUnit: 'human' | 'base';
-  messenger: string;
-  feePaymentMethod: string;
-  outputFormat: 'json' | 'base64' | 'hex';
-  sourceChain?: string;
-  txId?: string;
-  validateHandoff: boolean;
-  handoffFixturePath?: string;
+type ToolOutput = Record<string, unknown>;
+
+const env = (name: string, fallback: string) => process.env[name]?.trim() || fallback;
+
+const settings = {
+  sourceChain: env('SMOKE_SOURCE_CHAIN', 'ETH'),
+  destinationChain: env('SMOKE_DESTINATION_CHAIN', 'ARB'),
+  tokenSymbol: env('SMOKE_TOKEN_SYMBOL', 'USDC'),
+  destinationTokenSymbol: process.env.SMOKE_DESTINATION_TOKEN_SYMBOL?.trim(),
+  amount: env('SMOKE_AMOUNT', '10'),
+  messenger: env('SMOKE_MESSENGER', 'CCTP_V2'),
+  feePaymentMethod: env('SMOKE_FEE_PAYMENT_METHOD', 'WITH_NATIVE_CURRENCY'),
+  senderAddress: env('SMOKE_SENDER_ADDRESS', '0x1111111111111111111111111111111111111111'),
+  recipientAddress: env('SMOKE_RECIPIENT_ADDRESS', '0x1111111111111111111111111111111111111111'),
+  txId: process.env.SMOKE_TX_ID?.trim(),
 };
 
-function requireEnv(name: string): string {
-  const value = process.env[name];
-  if (!value) {
-    throw new Error(`Missing required environment variable: ${name}`);
+async function call(client: Client, name: string, args: Record<string, unknown>): Promise<ToolOutput> {
+  const result = await client.callTool({ name, arguments: args });
+  const output = (result.structuredContent ?? {}) as ToolOutput;
+  if (result.isError) {
+    throw new Error(`${name} failed: ${JSON.stringify(output.error ?? output)}`);
   }
-  return value;
-}
-
-function loadConfig(): SmokeConfig {
-  return {
-    apiBaseUrl: process.env.ALLBRIDGE_API_BASE_URL ?? 'http://127.0.0.1:3000',
-    sourceTokenAddress: requireEnv('SMOKE_SOURCE_TOKEN_ADDRESS'),
-    destinationTokenAddress: requireEnv('SMOKE_DESTINATION_TOKEN_ADDRESS'),
-    senderAddress: requireEnv('SMOKE_SENDER_ADDRESS'),
-    recipientAddress: requireEnv('SMOKE_RECIPIENT_ADDRESS'),
-    amount: process.env.SMOKE_AMOUNT ?? '1',
-    amountUnit: (process.env.SMOKE_AMOUNT_UNIT as SmokeConfig['amountUnit'] | undefined) ?? 'human',
-    messenger: requireEnv('SMOKE_MESSENGER'),
-    feePaymentMethod: requireEnv('SMOKE_FEE_PAYMENT_METHOD'),
-    outputFormat: (process.env.SMOKE_OUTPUT_FORMAT as SmokeConfig['outputFormat'] | undefined) ?? 'json',
-    sourceChain: process.env.SMOKE_SOURCE_CHAIN,
-    txId: process.env.SMOKE_TX_ID,
-    validateHandoff: process.env.SMOKE_VALIDATE_HANDOFF === '1',
-    handoffFixturePath: process.env.SMOKE_HANDOFF_FIXTURE,
-  };
-}
-
-function loadJsonFixture(filePath: string): unknown {
-  return JSON.parse(readFileSync(filePath, 'utf8')) as unknown;
+  return output;
 }
 
 async function main(): Promise<void> {
-  const config = loadConfig();
   const transport = new StdioClientTransport({
     command: 'node',
     args: ['dist/index.js'],
     cwd: process.cwd(),
     stderr: 'inherit',
-    env: {
-      ...process.env,
-      ALLBRIDGE_API_BASE_URL: config.apiBaseUrl,
-    } as Record<string, string>,
+    env: { ...process.env, MCP_TRANSPORT: 'stdio' } as Record<string, string>,
   });
-
-  const client = new Client(
-    { name: 'allbridge-mcp-smoke', version: '0.1.0' },
-    { capabilities: {} },
-  );
-
+  const client = new Client({ name: 'allbridge-mcp-smoke', version: PACKAGE_VERSION }, { capabilities: {} });
   await client.connect(transport);
 
-  const quote = await client.callTool({
-    name: 'quote_bridge_transfer',
-    arguments: {
-      sourceTokenAddress: config.sourceTokenAddress,
-      destinationTokenAddress: config.destinationTokenAddress,
-      amount: config.amount,
-      amountUnit: config.amountUnit,
-    },
-  });
+  try {
+    const tools = (await client.listTools()).tools.map((tool) => tool.name).sort();
+    const chains = await call(client, 'list_supported_chains', {});
 
-  const transactions = await client.callTool({
-    name: 'build_bridge_transactions',
-    arguments: {
-      sourceTokenAddress: config.sourceTokenAddress,
-      destinationTokenAddress: config.destinationTokenAddress,
-      senderAddress: config.senderAddress,
-      recipientAddress: config.recipientAddress,
-      amount: config.amount,
-      amountUnit: config.amountUnit,
-      messenger: config.messenger,
-      feePaymentMethod: config.feePaymentMethod,
-      outputFormat: config.outputFormat,
-    },
-  });
+    const plan = await call(client, 'plan_bridge_transfer', {
+      sourceChain: settings.sourceChain,
+      destinationChain: settings.destinationChain,
+      sourceTokenSymbol: settings.tokenSymbol,
+      ...(settings.destinationTokenSymbol ? { destinationTokenSymbol: settings.destinationTokenSymbol } : {}),
+      amount: settings.amount,
+    });
+    const route = plan.route as { source: { tokenAddress: string; chainSymbol: string }; destination: { tokenAddress: string; chainSymbol: string } };
 
-  const status = config.sourceChain && config.txId
-    ? await client.callTool({
-        name: 'get_transfer_status',
-        arguments: {
-          sourceChain: config.sourceChain,
-          txId: config.txId,
-        },
-      })
-    : null;
+    const job = validateBridgeExecutionJobContract(await call(client, 'create_bridge_execution_job', {
+      sourceTokenAddress: route.source.tokenAddress,
+      sourceChain: route.source.chainSymbol,
+      destinationTokenAddress: route.destination.tokenAddress,
+      destinationChain: route.destination.chainSymbol,
+      senderAddress: settings.senderAddress,
+      recipientAddress: settings.recipientAddress,
+      amount: settings.amount,
+      messenger: settings.messenger,
+      feePaymentMethod: settings.feePaymentMethod,
+    }));
 
-  const handoff = config.validateHandoff
-    ? validateBridgeExecutionJobContract(
-        (await client.callTool({
-          name: 'create_bridge_execution_job',
-          arguments: {
-            sourceTokenAddress: config.sourceTokenAddress,
-            destinationTokenAddress: config.destinationTokenAddress,
-            senderAddress: config.senderAddress,
-            recipientAddress: config.recipientAddress,
-            amount: config.amount,
-            amountUnit: config.amountUnit,
-            messenger: config.messenger,
-            feePaymentMethod: config.feePaymentMethod,
-            outputFormat: config.outputFormat,
-          },
-        })).structuredContent ?? {},
-      )
-    : null;
+    const status = settings.txId
+      ? await call(client, 'get_transfer_status', { sourceChain: settings.sourceChain, txId: settings.txId })
+      : null;
 
-  const handoffFixture = config.handoffFixturePath
-    ? validateBridgeExecutionJobContract(loadJsonFixture(config.handoffFixturePath))
-    : null;
-
-  const result: Record<string, unknown> = {
-    quote: quote.structuredContent ?? quote.content,
-    transactions: transactions.structuredContent ?? transactions.content,
-    status: status ? status.structuredContent ?? status.content : null,
-  };
-
-  if (handoff) {
-    result.handoff = handoff;
+    process.stdout.write(`${JSON.stringify({
+      tools,
+      chains: (chains.chains as Array<{ chainSymbol: string }>).map((chain) => chain.chainSymbol),
+      plan: { options: plan.options, unavailableOptions: plan.unavailableOptions },
+      job: { status: job.status, steps: job.steps.map((step) => ({ id: step.id, status: step.status, format: step.transactionFormat, built: step.transaction !== null })) },
+      status,
+    }, null, 2)}\n`);
+  } finally {
+    await client.close();
   }
-
-  if (handoffFixture) {
-    result.handoffFixture = handoffFixture;
-  }
-
-  process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-
-  await client.close();
 }
 
 main().catch((error: unknown) => {

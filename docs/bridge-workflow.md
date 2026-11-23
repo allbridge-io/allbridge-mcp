@@ -1,172 +1,81 @@
 # Bridge Workflow
 
-This page walks through the end-to-end bridge flow an agent is expected to drive with `allbridge-mcp`.
+The same five stages cover every messenger. Intent messengers add one call each.
 
-## The Mental Model
-
-A bridge transfer is five conceptual steps:
-
-1. Understand the ask — which chains, which token, how much.
-2. Plan — pick a route and a messenger.
-3. Preflight — verify the sender can cover the amount and fees.
-4. Execute — sign and submit the source-chain transaction.
-5. Track — wait for the receive side to confirm.
-
-`allbridge-mcp` owns steps 1, 2, 3, and 5. Step 4 happens either through [`local-signer-mcp`](https://github.com/allbridge-io/local-signer-mcp) or via an external signer that hands back a signed payload for `broadcast_signed_transaction`.
-
-## Recommended Flow
-
-### 1. Describe the transfer
-
-The user says something like "bridge 50 USDC from Ethereum to Solana". That is enough to start planning. If the agent does not know the symbols yet, it can first inspect the directory:
-
-- `list_supported_chains`
-- `list_supported_tokens`
-
-### 2. Plan
-
-```json
-{
-  "name": "plan_bridge_transfer",
-  "arguments": {
-    "sourceChain": "ETH",
-    "destinationChain": "SOL",
-    "sourceTokenSymbol": "USDC",
-    "amount": "50",
-    "amountUnit": "human"
-  }
-}
+```
+plan_bridge_transfer ─► create_bridge_execution_job ─► sign & broadcast steps ─► get_transfer_status
+                                                      │
+                     LIFI_INTENTS: create_lifi_intents_order right before signing the bridge step
+                     NEAR_INTENTS: submit_near_intents_deposit after broadcasting (optional)
 ```
 
-The response is wrapped: `{ protocols, core, next, errors }`. With the default `protocol: "auto"` both Allbridge Core and Allbridge NEXT are queried in parallel; pass `protocol: "core"` or `protocol: "next"` to query only one.
+## 1. Plan
 
-Each populated protocol block includes:
-
-- normalized amount
-- source and destination token details
-- messenger / route options
-- (Core only) a recommended option, a next-action hint, and `bridgePortalDeepLink`
-- `bridgePortalName`, `bridgePortalUrl`
-
-If the user or agent needs to compare routes directly, `find_bridge_routes` and `quote_bridge_transfer` (Core) and `quote_next_swap` (NEXT) expose lower-level slices.
-
-If a chain has multiple tokens with the same symbol, pass the exact token address in the planning call so the route uses the intended contract.
-
-### 3. Preflight balances
-
-Before building anything, validate that the sender can cover the move:
+Call `plan_bridge_transfer` with the chains, the token symbol and the amount:
 
 ```json
-{
-  "name": "check_sender_balances",
-  "arguments": {
-    "sourceTokenAddress": "0xsource",
-    "destinationTokenAddress": "0xdestination",
-    "senderAddress": "0xsender",
-    "recipientAddress": "SOL_RECIPIENT",
-    "amount": "50",
-    "amountUnit": "human",
-    "messenger": "ALLBRIDGE",
-    "feePaymentMethod": "WITH_NATIVE_CURRENCY"
-  }
-}
+{ "sourceChain": "Ethereum", "destinationChain": "Arbitrum", "sourceTokenSymbol": "USDC", "amount": "100" }
 ```
 
-The result carries `canProceed`. Stop and ask the user to top up if it is `false`.
+- Pass `destinationTokenSymbol` when the destination token differs (intent messengers can turn USDC into USDT or ETH).
+- When a chain has several tokens with the same symbol, the tool returns `ambiguous_token` with the candidates; repeat with the exact token address.
+- `options` are sorted by the amount received. `unavailableOptions` explains the rest — typically `amount_too_low` / `amount_too_high` with the limit, or `quote_unavailable` when no solver quotes the amount right now.
 
-### 4. Build the execution job
+## 2. Choose
 
-```json
-{
-  "name": "create_bridge_execution_job",
-  "arguments": {
-    "sourceTokenAddress": "0xsource",
-    "destinationTokenAddress": "0xdestination",
-    "senderAddress": "0xsender",
-    "recipientAddress": "SOL_RECIPIENT",
-    "amount": "50",
-    "amountUnit": "human",
-    "messenger": "ALLBRIDGE",
-    "feePaymentMethod": "WITH_NATIVE_CURRENCY"
-  }
-}
-```
+Show the user, for each option, the amount to receive, the time and the fees:
 
-The job returns:
+- **Bridge messengers** (`CCTP_V2`, `OFT`, `X_RESERVE`) list `feePaymentOptions`: the destination gas fee in the native currency (paid on top), in the source token (deducted from the amount) or in ABR.
+- **Intent messengers** (`NEAR_INTENTS`, `LIFI_INTENTS`) are market-priced. NEAR Intents states a `minAmountToReceive` after slippage; LI.FI Intents states the `allbridgeFee` included in the amount. Both refund the sender if the transfer cannot complete (NEAR Intents minus a refund fee; LI.FI keeps the Allbridge fee).
 
-- a `jobId`
-- ordered `steps` (typically approval + bridge, or a single bridge step)
-- transaction payloads for each step
-- `handoff` metadata per step (see [handoff.md](./handoff.md))
-- `walletSelector` hints
-- `destinationSetup` hints for Stellar trustlines and Algorand opt-ins when the destination chain needs them
-- a `tracking` block
-- `bridgePortalName`, `bridgePortalUrl`, `bridgePortalDeepLink`
+Then collect the sender and recipient addresses.
 
-If the intended local wallet is already known, pass `walletId` on the input so the job gets pinned to that wallet.
+## 3. Build the Job
 
-### 5. Hand off each step
+Call `create_bridge_execution_job` with token addresses, addresses, amount, messenger and fee payment method. Before signing, check:
 
-Inspect `handoff.executionTarget` and `handoff.executionTool` on each step:
+- `balanceValidation.canProceed` — whether the sender holds the amount and the gas fee. The job is built either way.
+- `destinationSetup` — whether the recipient must act first:
+  - `stellar_trustline` — a Stellar recipient needs a trustline for the token; `build_stellar_trustline_transaction` builds it for the recipient to sign;
+  - `solana_token_account` — a Solana recipient of a LI.FI Intents order needs a token account, otherwise the order is not filled and is refunded.
+- `steps` — in order. A step with `waitForConfirmation: true` must confirm on chain before the next one.
 
-- `local-signer-mcp.sign_and_broadcast_transaction` — the expected path for unsigned steps.
-- `allbridge-mcp.broadcast_signed_transaction` — the expected path when the payload is already signed elsewhere.
-- `walletSelector` — use `walletId` (or `from` for EVM) so the signer picks the right key.
-- `transactionShape` — tells the signer which family-specific payload format to build.
+## 4. Execute
 
-### 6. Handle destination setup, if needed
+For each step, pass `step.transaction` to `local-signer-mcp` `sign_and_broadcast_transaction`. To sign elsewhere, sign the same payload and call `broadcast_signed_transaction` here.
 
-If the destination chain is Stellar or Algorand and `destinationSetup.required` is `true`, use the helper tools before the main transfer:
+### NEAR Intents
 
-- `check_stellar_trustline` / `build_stellar_trustline_transaction`
-- `check_algorand_optin` / `build_algorand_optin_transaction`
+The job created a one-time deposit (`intent.depositAddress`, `intent.deadline`) and the bridge step is a plain transfer of the amount to it (with `depositMemo` on Stellar). Send it before the deadline: funds arriving later may be lost. After broadcasting, `submit_near_intents_deposit` with `intent.submitDepositArguments` and the real hash makes NEAR Intents pick it up sooner.
 
-### 7. Track
+### LI.FI Intents
 
-After the source-chain transaction is on-chain, call:
+A LI.FI order is valid for 40-120 seconds, so the bridge step has no transaction yet:
 
-```json
-{
-  "name": "get_transfer_status",
-  "arguments": {
-    "sourceChain": "ETH",
-    "txId": "0xsourceTransactionHash"
-  }
-}
-```
+1. Sign the `approve` step if there is one (EVM tokens) and wait for it to confirm.
+2. Call `create_lifi_intents_order` with the bridge step `build.arguments`.
+3. Sign `step.transaction` from the result immediately (`order.secondsToSign` says how long is left).
 
-The response carries signature progress, send and receive transaction details, and a direct Allbridge history URL when the source chain and transaction hash are both known. Poll until the receive side lands or the transfer reaches another terminal state.
+`create_lifi_intents_order` protects the user:
 
-## Error Handling
+- `approval_required` — the allowance is not in place yet; wait for the approve step.
+- `price_changed` — the order pays less than `minAmountToReceive` (the quote minus `maxSlippagePercent`, 0.5% by default). Show the new amount; if the user accepts, call again with `minAmountToReceive` set to the new amount.
+- It refuses an EVM transaction that does not call the Allbridge `LifiIntentsBridge` contract from the sender.
 
-Tools return structured errors:
+If the order expires before it is signed, call `create_lifi_intents_order` again.
 
-```json
-{
-  "ok": false,
-  "error": {
-    "code": "insufficient_balance",
-    "message": "Sender cannot cover the bridged amount",
-    "details": {}
-  }
-}
-```
+### Expiring transactions
 
-Use `error.code` and `error.details` to ask the user for the missing input instead of retrying blindly. Common codes include:
+- Solana transactions carry a blockhash valid for about a minute, Tron transactions expire after 60 seconds. `local-signer-mcp` refreshes both when it signs an unsigned transaction; other signers should sign right away or rebuild the job.
+- Ethereum USDT needs its allowance reset to zero before a new approval; the job adds a `reset_allowance` step when needed.
 
-- `invalid_chain`
-- `invalid_token`
-- `insufficient_balance`
-- `route_not_found`
-- `messenger_unavailable`
+## 5. Track
 
-## Orienting Around Past Transfers
+Call `get_transfer_status` with the source chain and the bridge step transaction hash:
 
-When the user references an existing transfer, use the explorer-backed tools:
+- `pending` — sent, not delivered yet;
+- `completed` — delivered (`receive` has the destination transaction);
+- `refunded` — an intent transfer could not complete; `refundTxId` and `refundedAmount` describe the refund;
+- `not_found` — the Core API has not indexed the transaction yet; retry in 30-60 seconds.
 
-- `search_allbridge_transfers` — by `query` or by direct explorer filters. Address queries expand into account history without forcing a chain; transfer hashes resolve to a transfer record; direct filters can list transfers by account alone, by chain, by direction, by status, or by amount.
-- `get_allbridge_transfer` — when the transfer ID is already known and you want the full record.
-
-## One-Line Summary
-
-> `allbridge-mcp` plans the route, checks balances, builds the job, and tracks the transfer. Signing belongs to `local-signer-mcp` or any other signer that can return a signed payload.
+`historyUrl` opens the transfer in the Allbridge Core web app. For older transfers, `search_allbridge_transfers` finds them by address or hash.
