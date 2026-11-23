@@ -11,6 +11,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 
 import { validateBridgeExecutionJobContract } from './execution-job-contract.js';
+import { PACKAGE_VERSION } from './version.js';
 
 type ToolOutput = Record<string, unknown>;
 
@@ -46,7 +47,7 @@ async function main(): Promise<void> {
     stderr: 'inherit',
     env: { ...process.env, MCP_TRANSPORT: 'stdio' } as Record<string, string>,
   });
-  const client = new Client({ name: 'allbridge-mcp-smoke', version: '0.2.0' }, { capabilities: {} });
+  const client = new Client({ name: 'allbridge-mcp-smoke', version: PACKAGE_VERSION }, { capabilities: {} });
   await client.connect(transport);
 
   try {

@@ -3,7 +3,7 @@
 `allbridge-mcp` is an MCP server for Allbridge Core transfers. It lets an AI agent find a route, compare quotes, build ready-to-sign transactions, broadcast signed ones and track the result — without holding private keys.
 
 - Repository: [github.com/allbridge-io/allbridge-mcp](https://github.com/allbridge-io/allbridge-mcp)
-- npm: [`@allbridge/allbridge-mcp`](https://www.npmjs.com/package/@allbridge/allbridge-mcp) (`npx -y @allbridge/allbridge-mcp@0.2.0`)
+- npm: [`@allbridge/allbridge-mcp`](https://www.npmjs.com/package/@allbridge/allbridge-mcp) (`npx -y @allbridge/allbridge-mcp@1.0.0`)
 - End-to-end walkthrough: [`docs/usage.md`](./docs/usage.md)
 - Pairs with: [`local-signer-mcp`](https://github.com/allbridge-io/local-signer-mcp), which signs the transactions this server builds
 
@@ -63,13 +63,13 @@ claude mcp add allbridge -- node /absolute/path/to/allbridge-mcp/dist/index.js
 The package ships an `allbridge-mcp` binary, so a client can start the published version without a checkout. Pin the version:
 
 ```bash
-claude mcp add allbridge -- npx -y @allbridge/allbridge-mcp@0.2.0
+claude mcp add allbridge -- npx -y @allbridge/allbridge-mcp@1.0.0
 ```
 
 ```json
 {
   "mcpServers": {
-    "allbridge": { "command": "npx", "args": ["-y", "@allbridge/allbridge-mcp@0.2.0"] }
+    "allbridge": { "command": "npx", "args": ["-y", "@allbridge/allbridge-mcp@1.0.0"] }
   }
 }
 ```
@@ -150,7 +150,7 @@ pnpm smoke
 
 CI (`.github/workflows/ci.yml`) runs lint, tests and the build on every pull request and on every push to `master`. On a push to `master` it publishes `@allbridge/allbridge-mcp` to npm when the `version` in `package.json` is not on npm yet, then tags `v<version>` and creates a GitHub release.
 
-To release, bump `version` in the pull request ([semver](https://semver.org): while on `0.x`, a patch for fixes and a minor for features or breaking changes). Merging a pull request without a version bump publishes nothing.
+To release, bump `version` in the pull request ([semver](https://semver.org): a patch for fixes, a minor for backward-compatible features, a major for breaking changes). Merging a pull request without a version bump publishes nothing.
 
 Publishing uses npm trusted publishing (GitHub OIDC), so there is no npm token in the repository. One-time setup:
 

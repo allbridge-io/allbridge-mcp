@@ -5,7 +5,7 @@ This page gets `allbridge-mcp` running from a checkout against the public Allbri
 Without a checkout, register the published package instead and skip to step 5:
 
 ```bash
-claude mcp add allbridge -- npx -y @allbridge/allbridge-mcp@0.2.0
+claude mcp add allbridge -- npx -y @allbridge/allbridge-mcp@1.0.0
 ```
 
 ## 1. Install and build
