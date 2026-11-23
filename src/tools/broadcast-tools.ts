@@ -51,8 +51,8 @@ export const signedTransactionInputSchema = {
   chainSymbol: z.string().trim().min(1).optional().describe('Optional EVM chain symbol.'),
   walletId: z.string().trim().min(1).optional().describe('Optional wallet selector.'),
   signedTransaction: z.unknown().optional().describe('Signed transaction payload for EVM or Tron.'),
-  signedTransactionHex: z.string().trim().min(1).optional().describe('Signed transaction hex payload for Solana, Stacks, or Soroban.'),
-  signedTransactionXdr: z.string().trim().min(1).optional().describe('Signed transaction XDR payload for Soroban / Stellar.'),
+  signedTransactionHex: z.string().trim().min(1).optional().describe('Signed transaction hex payload for Solana or Stacks.'),
+  signedTransactionXdr: z.string().trim().min(1).optional().describe('Signed transaction XDR payload for Stellar (SRB).'),
 };
 
 export function registerBroadcastTools(server: McpServer, context: ToolContext): void {

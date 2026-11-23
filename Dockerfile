@@ -8,7 +8,6 @@ RUN apk update && \
 RUN npm install -g npm@latest pnpm@10.28.2
 
 WORKDIR /app
-ENV NODE_ENV=production
 
 COPY package.json ./
 COPY .npmrc ./
@@ -27,6 +26,7 @@ COPY .env.example ./
 
 RUN pnpm install --frozen-lockfile
 RUN pnpm build
+RUN pnpm prune --prod
 
 FROM node:24-alpine
 
