@@ -4,7 +4,9 @@
 
 ## Shape
 
-```json
+Trimmed (`…` marks omitted values):
+
+```jsonc
 {
   "jobId": "4f2c…",
   "kind": "bridge_transfer",
@@ -12,6 +14,9 @@
   "mode": "external_signer",
   "status": "awaiting_signature",
   "summary": "Bridge 10 USDC from ETH to ARB to 0x2222…",
+  "bridgePortalName": "Allbridge Core",
+  "bridgePortalUrl": "https://core.allbridge.io",
+  "bridgePortalDeepLink": "https://core.allbridge.io/?f=ETH&t=ARB&ft=USDC&tt=USDC&send=10&messenger=CCTP_V2",
   "route": { "source": { … }, "destination": { … }, "messenger": "CCTP_V2", "feePaymentMethod": "WITH_NATIVE_CURRENCY" },
   "participants": { "senderAddress": "0x1111…", "recipientAddress": "0x2222…" },
   "amount": { "amountInBaseUnits": "10000000", "amountInHumanUnits": "10" },
@@ -24,6 +29,8 @@
   "tracking": {
     "sourceChain": "ETH",
     "destinationChain": "ARB",
+    "sourceTokenAddress": "0xA0b8…",
+    "destinationTokenAddress": "0xaf88…",
     "transferStatusTool": "get_transfer_status",
     "transferStatusArguments": { "sourceChain": "ETH", "txId": "<bridge step transaction hash>" },
     "historyUrlTemplate": "https://core.allbridge.io/history/ETH/{txId}"
@@ -32,11 +39,13 @@
 }
 ```
 
-`status` is `requires_build` when the first step must be built first (LI.FI Intents from Solana), otherwise `awaiting_signature`.
+`status` is `requires_build` when the first step must be built first (LI.FI Intents without an approve step, e.g. from Solana or a native currency), otherwise `awaiting_signature`.
+
+`bridgePortalDeepLink` opens the same transfer in the Allbridge Core web app. An agent that has no signer, or does not sign itself, gives it to the user, who signs in their own wallet.
 
 ## Steps
 
-```json
+```jsonc
 {
   "id": "approve",
   "order": 1,
@@ -107,8 +116,8 @@ Two valid paths:
 
 `intent` describes the intent messenger part of the job:
 
-- NEAR Intents — `depositAddress`, `depositMemo`, `deadline`, `amountToSend`, `amountToReceive`, `minAmountToReceive`, and `submitDepositArguments` for `submit_near_intents_deposit`.
-- LI.FI Intents — `buildTool`, `minAmountToReceive`, `maxSlippagePercent`, `bridgeContract`.
+- NEAR Intents — `provider`, `depositAddress`, `depositMemo`, `deadline`, `amountToSend`, `amountToReceive`, `minAmountToReceive`, and `submitDepositTool` with `submitDepositArguments` for `submit_near_intents_deposit`.
+- LI.FI Intents — `provider`, `buildTool`, `minAmountToReceive`, `maxSlippagePercent`, `bridgeContract`.
 
 ## Destination Setup
 

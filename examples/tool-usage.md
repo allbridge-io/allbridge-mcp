@@ -78,7 +78,20 @@ Pass a step transaction to the signer as is:
 LI.FI Intents bridge step, right before signing:
 
 ```json
-{ "name": "create_lifi_intents_order", "arguments": { "…": "the bridge step build.arguments" } }
+{
+  "name": "create_lifi_intents_order",
+  "arguments": {
+    "sourceTokenAddress": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+    "sourceChain": "ARB",
+    "destinationTokenAddress": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+    "destinationChain": "BAS",
+    "senderAddress": "0x1111111111111111111111111111111111111111",
+    "recipientAddress": "0x1111111111111111111111111111111111111111",
+    "amount": "100000000",
+    "amountUnit": "base",
+    "minAmountToReceive": "99383169"
+  }
+}
 ```
 
 NEAR Intents, after broadcasting the deposit:

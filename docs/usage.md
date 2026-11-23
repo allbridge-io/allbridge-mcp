@@ -57,7 +57,7 @@ The user picks `CCTP_V2` and pays the gas fee in USDC (deducted from the amount)
     "destinationTokenAddress": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
     "senderAddress": "0x1111111111111111111111111111111111111111",
     "recipientAddress": "0x1111111111111111111111111111111111111111",
-    "amount": "10",
+    "amount": "100",
     "messenger": "CCTP_V2",
     "feePaymentMethod": "WITH_STABLECOIN"
   }
@@ -69,7 +69,7 @@ The user picks `CCTP_V2` and pays the gas fee in USDC (deducted from the amount)
   "status": "awaiting_signature",
   "balanceValidation": {
     "canProceed": true,
-    "requiredBalances": [{ "kind": "source_token", "label": "USDC balance on ETH", "requiredBaseUnits": "10000000", "availableBaseUnits": "1528855507", "satisfied": true }],
+    "requiredBalances": [{ "kind": "source_token", "label": "USDC balance on ETH", "requiredBaseUnits": "100000000", "availableBaseUnits": "1528855507", "satisfied": true }],
     "notes": ["The 0.239043 USDC gas fee is deducted from the transferred amount.", "Network transaction fees on ETH are paid in ETH on top of these amounts."]
   },
   "steps": [

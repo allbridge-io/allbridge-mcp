@@ -11,7 +11,7 @@ When in doubt, start with `stdio`.
 
 ## Path Or npx
 
-The recipes below start a local checkout (`node /absolute/path/to/allbridge-mcp/dist/index.js`), which suits development. To run the published package instead, replace the command with `npx` and pin the version:
+Most recipes below start a local checkout (`node /absolute/path/to/allbridge-mcp/dist/index.js`), which suits development. To run the published package instead, replace the command with `npx` and pin the version:
 
 ```json
 { "command": "npx", "args": ["-y", "@allbridge/allbridge-mcp@0.2.0"] }
@@ -78,8 +78,7 @@ Save as `~/.cursor/mcp.json` (user-wide) or `.cursor/mcp.json` in the project ro
   "mcpServers": {
     "allbridge": {
       "command": "node",
-      "args": ["dist/index.js"],
-      "cwd": "/absolute/path/to/allbridge-mcp",
+      "args": ["/absolute/path/to/allbridge-mcp/dist/index.js"],
       "env": {
         "ALLBRIDGE_ETH_RPC_URL": "https://your-eth-rpc.example.com"
       }
@@ -108,21 +107,16 @@ Save as `~/.cursor/mcp.json` (user-wide) or `.cursor/mcp.json` in the project ro
 
 ## Continue
 
-`~/.continue/config.json`:
+`~/.continue/config.yaml`:
 
-```json
-{
-  "mcpServers": [
-    {
-      "name": "allbridge",
-      "command": "/absolute/path/to/node",
-      "args": ["/absolute/path/to/allbridge-mcp/dist/index.js"],
-      "env": {
-        "ALLBRIDGE_ETH_RPC_URL": "https://your-eth-rpc.example.com"
-      }
-    }
-  ]
-}
+```yaml
+mcpServers:
+  - name: allbridge
+    command: /absolute/path/to/node
+    args:
+      - /absolute/path/to/allbridge-mcp/dist/index.js
+    env:
+      ALLBRIDGE_ETH_RPC_URL: https://your-eth-rpc.example.com
 ```
 
 ## Zed
@@ -173,7 +167,7 @@ Use `streamable-http` only when the client requires a URL. Example bearer setup:
     "allbridge": {
       "url": "https://your-allbridge-mcp.example.com",
       "headers": {
-        "Authorization": "Bearer replace-me"
+        "Authorization": "Bearer <the MCP_BEARER_TOKEN value>"
       }
     }
   }
@@ -193,11 +187,11 @@ If the client insists on `https://`, terminate TLS at a reverse proxy in front o
         "run",
         "-i",
         "--rm",
+        "-e",
+        "MCP_TRANSPORT=stdio",
         "--env-file",
         "/absolute/path/to/allbridge.env",
-        "allbridge/io.allbridge.mcp:latest",
-        "node",
-        "dist/index.js"
+        "allbridge-mcp"
       ],
       "env": {}
     }
@@ -205,7 +199,7 @@ If the client insists on `https://`, terminate TLS at a reverse proxy in front o
 }
 ```
 
-Prefer `--env-file` over inline `env` so you are not pasting keys into client config.
+Build the image first with `docker build -t allbridge-mcp .` in the repository. The image defaults to `streamable-http`, so the recipe switches it to stdio with `-e MCP_TRANSPORT=stdio`. Prefer `--env-file` over inline `env` so RPC URLs with API keys stay out of the client config.
 
 ## Pairing with `local-signer-mcp`
 
@@ -215,20 +209,22 @@ Most real flows run `local-signer-mcp` next to `allbridge-mcp`. The same client 
 {
   "mcpServers": {
     "allbridge": {
-      "command": "/absolute/path/to/node",
-      "args": ["/absolute/path/to/allbridge-mcp/dist/index.js"],
+      "command": "npx",
+      "args": ["-y", "@allbridge/allbridge-mcp@0.2.0"],
       "env": { "ALLBRIDGE_ETH_RPC_URL": "https://your-eth-rpc.example.com" }
     },
     "local-signer": {
-      "command": "/absolute/path/to/node",
-      "args": ["/absolute/path/to/local-signer-mcp/dist/index.js"],
+      "command": "npx",
+      "args": ["-y", "@allbridge/local-signer-mcp@0.2.0"],
       "env": {
-        "LOCAL_SIGNER_EVM_PRIVATE_KEY": "0xyourprivatekey",
-        "LOCAL_SIGNER_EVM_RPC_URL": "https://your-rpc.example"
+        "LOCAL_SIGNER_EVM_PRIVATE_KEY_ETH": "0xyourprivatekey",
+        "LOCAL_SIGNER_EVM_RPC_URL_ETH": "https://your-eth-rpc.example",
+        "LOCAL_SIGNER_EVM_PRIVATE_KEY_ARB": "0xyourprivatekey",
+        "LOCAL_SIGNER_EVM_RPC_URL_ARB": "https://your-arb-rpc.example"
       }
     }
   }
 }
 ```
 
-See the [`local-signer-mcp` README](https://github.com/allbridge-io/local-signer-mcp) for signer-side configuration details.
+Give the signer a key and an RPC per EVM chain you send from (`LOCAL_SIGNER_EVM_PRIVATE_KEY_<CHAIN>` / `LOCAL_SIGNER_EVM_RPC_URL_<CHAIN>`): the jobs carry a `chainSymbol`, and the signer picks the wallet configured for that chain. See the [`local-signer-mcp` README](https://github.com/allbridge-io/local-signer-mcp) for the full signer configuration.

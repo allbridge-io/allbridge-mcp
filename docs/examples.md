@@ -4,8 +4,8 @@ Concrete integrations and annotated walk-throughs. These sit in the repo `exampl
 
 ## Client Configs
 
-- [`examples/claude-code.md`](../examples/claude-code.md) — one-liner CLI registration for Claude Code.
-- [`examples/cursor.mcp.json`](../examples/cursor.mcp.json) — Cursor MCP config.
+- [`examples/claude-code.md`](../examples/claude-code.md) — one-liner CLI registration for Claude Code (npx or a local checkout).
+- [`examples/cursor.mcp.json`](../examples/cursor.mcp.json) — Cursor MCP config with the published package.
 
 For more clients (Windsurf, Continue, Zed, Cline, Claude Desktop, Docker, remote HTTP), see [`client-integrations.md`](./client-integrations.md).
 

@@ -27,7 +27,7 @@ No input. Returns `chains[]` with `chainSymbol`, `chainName`, `chainType`, `toke
 |-------|-------|
 | `chain` | Optional chain symbol or alias; omit for every chain |
 
-Returns tokens with `symbol`, `name`, `tokenAddress`, `decimals`, `chainSymbol`, `chainType`, `isNative`.
+With `chain`, returns that `chain` (with its `aliases`) and its `tokens`; without it, `chains[]`, each with its `tokens`. Token fields: `symbol`, `name`, `tokenAddress`, `decimals`, `chainSymbol`, `chainName`, `chainType`, `isNative`.
 
 ### `find_bridge_routes`
 
@@ -76,17 +76,17 @@ Returns `requiredBalances[]` (`kind`: `source_token`, `source_native`, `fee_nati
 | token addresses, `amount`, `amountUnit`, `messenger`, `feePaymentMethod` | As above |
 | `senderAddress`, `recipientAddress` | Validated for their chains |
 | `walletId` | Optional `local-signer-mcp` wallet id, copied into every step |
-| `maxSlippagePercent` | `LIFI_INTENTS` only: accepted drop from the quote before `create_lifi_intents_order` stops (default 0.5) |
+| `maxSlippagePercent` | `LIFI_INTENTS` only: accepted drop from the quote before `create_lifi_intents_order` stops, 0 to 5 (default 0.5) |
 
-Returns the execution job (contract: [handoff.md](./handoff.md)): `quote`, `balanceValidation`, `destinationSetup`, `intent`, ordered `steps[]`, `tracking` and `bridgePortalDeepLink` (the same transfer in the Allbridge Core web app, for a user who signs in their own wallet). Steps:
+Returns the execution job (contract: [handoff.md](./handoff.md)): `quote`, `balanceValidation`, `destinationSetup`, `intent`, ordered `steps[]`, `tracking`, `nextAction` and `bridgePortalDeepLink` (the same transfer in the Allbridge Core web app, for a user who signs in their own wallet). Steps:
 
 - `reset_allowance` — Ethereum USDT only, when a non-zero allowance must be reset before approving;
-- `approve` — EVM and Tron tokens without enough allowance (no approval for native currencies, NEAR Intents or Solana);
+- `approve` — EVM and Tron tokens without enough allowance (EVM only for `LIFI_INTENTS`); none for native currencies, `NEAR_INTENTS`, or Solana, Stacks and Stellar sources;
 - `bridge` — the transfer. For `LIFI_INTENTS` it has `transaction: null` and a `build` block.
 
 ### `create_lifi_intents_order`
 
-Build step for LI.FI Intents. Takes the job bridge step `build.arguments`: token addresses and chains, `senderAddress`, `recipientAddress`, `amount`, `amountUnit`, `minAmountToReceive` (destination base units), optional `walletId`.
+Build step for LI.FI Intents. Takes the job bridge step `build.arguments`: token addresses and chains, `senderAddress`, `recipientAddress`, `amount`, `amountUnit`, `minAmountToReceive` (destination base units), optional `walletId`. Without `minAmountToReceive` there is no `price_changed` check, so always pass the one from the job.
 
 Returns `order` (`orderId`, `validUntil`, `fillDeadline`, `secondsToSign`), the order `quote`, a signer-ready `step` and `tracking` (`explorerTransferId` is the order id). Stops with:
 
@@ -133,7 +133,7 @@ Returns `txHash` and a `receipt` when the chain provides one. The payload is val
 
 ### `search_allbridge_transfers`
 
-Either `query` (address, transaction hash or transfer id) or list filters: `account`, `chain` or `from` / `to`, `status` (`Complete`, `Pending`), `minFromAmount`, `maxFromAmount`, `page`, `limit`. Returns normalized transfers with the raw explorer record.
+Either `query` (address, transaction hash or transfer id) or list filters, not both. Filters: `account`, `chain` or `from` / `to`, `status` (`Complete`, `Pending`), `minFromAmount`, `maxFromAmount`, `page` (default 1), `limit` (default 10, at most 20). Returns normalized transfers with the raw explorer record.
 
 ### `get_allbridge_transfer`
 

@@ -1,9 +1,8 @@
 {
   "mcpServers": {
     "allbridge": {
-      "command": "node",
-      "args": ["dist/index.js"],
-      "cwd": "<path-to-allbridge-mcp>",
+      "command": "npx",
+      "args": ["-y", "@allbridge/allbridge-mcp@0.2.0"],
       "env": {
         "ALLBRIDGE_ETH_RPC_URL": "https://your-eth-rpc.example.com"
       }

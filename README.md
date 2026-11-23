@@ -3,7 +3,7 @@
 `allbridge-mcp` is an MCP server for Allbridge Core transfers. It lets an AI agent find a route, compare quotes, build ready-to-sign transactions, broadcast signed ones and track the result — without holding private keys.
 
 - Repository: [github.com/allbridge-io/allbridge-mcp](https://github.com/allbridge-io/allbridge-mcp)
-- Docker image: [allbridge/io.allbridge.mcp](https://hub.docker.com/repository/docker/allbridge/io.allbridge.mcp/tags?name=latest)
+- npm: [`@allbridge/allbridge-mcp`](https://www.npmjs.com/package/@allbridge/allbridge-mcp) (`npx -y @allbridge/allbridge-mcp@0.2.0`)
 - End-to-end walkthrough: [`docs/usage.md`](./docs/usage.md)
 - Pairs with: [`local-signer-mcp`](https://github.com/allbridge-io/local-signer-mcp), which signs the transactions this server builds
 
@@ -27,7 +27,7 @@ The server runs on the [Allbridge Core SDK](https://www.npmjs.com/package/@allbr
 | `CCTP_V2` | bridge | Circle CCTP V2 for USDC |
 | `OFT` | bridge | LayerZero OFT (USDT0 and others) |
 | `X_RESERVE` | bridge | Circle xReserve (USDC ↔ USDCx on Stacks) |
-| `NEAR_INTENTS` | intent | NEAR Intents (1Click): transfer to a one-time deposit address, solvers deliver; any token pair, native currencies included |
+| `NEAR_INTENTS` | intent | NEAR Intents (1Click): transfer to a one-time deposit address, solvers deliver; any token pair except from Stacks, native currencies included |
 | `LIFI_INTENTS` | intent | LI.FI Intents: escrow order filled by solvers within seconds; EVM and Solana sources |
 
 **Bridge** messengers charge a deterministic Allbridge fee; the destination gas fee is paid in the native currency, in the source token (deducted from the amount) or in ABR. **Intent** messengers are market-priced: the quote already includes every fee, and an unfilled transfer is refunded to the sender.
@@ -41,7 +41,7 @@ Supported source chain families: EVM, Solana, Tron, Stacks, Stellar. The live ro
 ## Requirements
 
 - Node.js 22.12+
-- `pnpm`
+- `pnpm`, only to build from source (`npx` needs Node alone)
 - Optional: Docker for the HTTP transport
 
 ## Quick Start
@@ -128,14 +128,12 @@ Docker / HTTP:
 
 ```bash
 docker build -t allbridge-mcp .
-docker run --rm -p 3000:3000 \
-  -e MCP_TRANSPORT=streamable-http \
-  -e MCP_HOST=0.0.0.0 \
+docker run --rm -p 127.0.0.1:3000:3000 \
   -e ALLBRIDGE_ETH_RPC_URL=https://your-eth-rpc.example.com \
   allbridge-mcp
 ```
 
-Or pull the published image: `allbridge/io.allbridge.mcp:latest`. Inspect the server locally with `pnpm inspect`.
+The image runs `streamable-http` on port 3000 with no authentication, so the example publishes it on `127.0.0.1` only. To expose it, set `MCP_AUTH_MODE` first ([`docs/transport-and-auth.md`](./docs/transport-and-auth.md)). Inspect the server locally with `pnpm inspect`.
 
 ## Verification
 
@@ -146,11 +144,11 @@ pnpm test
 pnpm smoke
 ```
 
-`pnpm smoke` drives the built server over stdio against the live Core API: it lists routes, quotes, builds an execution job and checks it against the job contract. It never signs or sends anything.
+`pnpm smoke` drives the built server over stdio against the live Core API: it lists the tools and chains, plans a transfer, builds an execution job and checks it against the job contract. It never signs or sends anything. The default is 10 USDC from Ethereum to Arbitrum through `CCTP_V2`; override it with `SMOKE_SOURCE_CHAIN`, `SMOKE_DESTINATION_CHAIN`, `SMOKE_TOKEN_SYMBOL`, `SMOKE_DESTINATION_TOKEN_SYMBOL`, `SMOKE_AMOUNT`, `SMOKE_MESSENGER`, `SMOKE_FEE_PAYMENT_METHOD`, `SMOKE_SENDER_ADDRESS` and `SMOKE_RECIPIENT_ADDRESS`. Set `SMOKE_TX_ID` to also check that transfer's status.
 
 ## Releasing
 
-CI (`.github/workflows/ci.yml`) runs lint, tests and the build on every pull request and push. On a push to `master` it publishes `@allbridge/allbridge-mcp` to npm when the `version` in `package.json` is not on npm yet, then tags `v<version>` and creates a GitHub release.
+CI (`.github/workflows/ci.yml`) runs lint, tests and the build on every pull request and on every push to `master`. On a push to `master` it publishes `@allbridge/allbridge-mcp` to npm when the `version` in `package.json` is not on npm yet, then tags `v<version>` and creates a GitHub release.
 
 To release, bump `version` in the pull request ([semver](https://semver.org): while on `0.x`, a patch for fixes and a minor for features or breaking changes). Merging a pull request without a version bump publishes nothing.
 

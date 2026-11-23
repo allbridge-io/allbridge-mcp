@@ -1,6 +1,12 @@
 # Quickstart
 
-This page gets `allbridge-mcp` running against the public Allbridge Core API. It assumes Node.js 22.12+ and `pnpm`.
+This page gets `allbridge-mcp` running from a checkout against the public Allbridge Core API. It assumes Node.js 22.12+ and `pnpm`.
+
+Without a checkout, register the published package instead and skip to step 5:
+
+```bash
+claude mcp add allbridge -- npx -y @allbridge/allbridge-mcp@0.2.0
+```
 
 ## 1. Install and build
 

@@ -25,7 +25,7 @@ A signed EVM transaction is broadcast through the RPC of its `chainSymbol`, or o
 
 | Variable | Purpose | Default |
 |----------|---------|---------|
-| `ALLBRIDGE_SRB_NETWORK_PASSPHRASE` | Stellar network passphrase used to decode signed Stellar transactions | `Public Global Stellar Network ; September 2015` |
+| `ALLBRIDGE_SRB_NETWORK_PASSPHRASE` | Stellar network passphrase used to build Stellar transactions and decode signed ones | `Public Global Stellar Network ; September 2015` |
 
 ## Transport
 
@@ -35,14 +35,14 @@ A signed EVM transaction is broadcast through the RPC of its `chainSymbol`, or o
 | `MCP_HOST` | HTTP bind host (when `streamable-http`) | `0.0.0.0` |
 | `MCP_PORT` | HTTP bind port | `3000` |
 | `PORT` | Optional hosting fallback. Overrides `MCP_PORT` when set | — |
-| `MCP_PUBLIC_BASE_URL` | Public HTTPS base URL. Used to build OAuth metadata and redirect URLs. Recommended for hosted deployments | — |
+| `MCP_PUBLIC_BASE_URL` | Public HTTPS base URL for OAuth metadata and redirect URLs. Only its origin is used. When unset, the server derives it from `Host` / `X-Forwarded-Proto`. Recommended for hosted deployments | — |
 
 ## Authentication (HTTP mode)
 
 | Variable | Purpose | Default |
 |----------|---------|---------|
 | `MCP_AUTH_MODE` | `none`, `bearer`, or `oauth` | `none` |
-| `MCP_BEARER_TOKEN` | Static bearer token (when `MCP_AUTH_MODE=bearer`) | — |
+| `MCP_BEARER_TOKEN` | Static bearer token (when `MCP_AUTH_MODE=bearer`), at least 16 characters | — |
 | `MCP_OAUTH_ISSUER_NAME` | Human-readable name in OAuth metadata and consent pages | `Allbridge MCP` |
 | `MCP_OAUTH_SCOPE` | Scope advertised by the server | `allbridge.mcp` |
 | `MCP_OAUTH_ACCESS_TOKEN_TTL_SECONDS` | Access token lifetime | `3600` |
@@ -66,7 +66,7 @@ MCP_HOST=0.0.0.0
 MCP_PORT=3000
 MCP_PUBLIC_BASE_URL=https://your-mcp-host.example.com
 MCP_AUTH_MODE=bearer
-MCP_BEARER_TOKEN=replace-me
+MCP_BEARER_TOKEN=<random token, e.g. openssl rand -hex 32>
 ALLBRIDGE_ETH_RPC_URL=https://your-eth-rpc.example
 ALLBRIDGE_ARB_RPC_URL=https://your-arb-rpc.example
 ALLBRIDGE_SOL_RPC_URL=https://your-solana-rpc.example
