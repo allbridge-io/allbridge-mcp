@@ -3,7 +3,7 @@
 `allbridge-mcp` is an MCP server for Allbridge Core transfers. It lets an AI agent find a route, compare quotes, build ready-to-sign transactions, broadcast signed ones and track the result — without holding private keys.
 
 - Repository: [github.com/allbridge-io/allbridge-mcp](https://github.com/allbridge-io/allbridge-mcp)
-- npm: [`@allbridge/allbridge-mcp`](https://www.npmjs.com/package/@allbridge/allbridge-mcp) (`npx -y @allbridge/allbridge-mcp@1.0.0`)
+- npm: [`@allbridge/allbridge-mcp`](https://www.npmjs.com/package/@allbridge/allbridge-mcp) (`npx -y @allbridge/allbridge-mcp@1.0.1`)
 - End-to-end walkthrough: [`docs/usage.md`](./docs/usage.md)
 - Pairs with: [`local-signer-mcp`](https://github.com/allbridge-io/local-signer-mcp), which signs the transactions this server builds
 
@@ -63,13 +63,13 @@ claude mcp add allbridge -- node /absolute/path/to/allbridge-mcp/dist/index.js
 The package ships an `allbridge-mcp` binary, so a client can start the published version without a checkout. Pin the version:
 
 ```bash
-claude mcp add allbridge -- npx -y @allbridge/allbridge-mcp@1.0.0
+claude mcp add allbridge -- npx -y @allbridge/allbridge-mcp@1.0.1
 ```
 
 ```json
 {
   "mcpServers": {
-    "allbridge": { "command": "npx", "args": ["-y", "@allbridge/allbridge-mcp@1.0.0"] }
+    "allbridge": { "command": "npx", "args": ["-y", "@allbridge/allbridge-mcp@1.0.1"] }
   }
 }
 ```
