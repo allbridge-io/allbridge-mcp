@@ -173,6 +173,10 @@ export const BRIDGE_PORTAL_NAME = 'Allbridge Core';
 export const BRIDGE_PORTAL_URL = 'https://core.allbridge.io';
 const BRIDGE_HISTORY_URL = 'https://core.allbridge.io/history';
 
+/** What an agent should do when no signer is connected or it will not sign the transfer itself. */
+export const NO_SIGNER_FALLBACK =
+  'If no signer is connected, or you do not sign transactions yourself, give the user bridgePortalDeepLink instead: it opens this transfer in Allbridge Core, where they connect their own wallet, check the recipient (the link does not carry it) and the fee payment method, and sign there.';
+
 export function buildBridgePortalDeepLink(params: {
   sourceToken: CoreToken;
   destinationToken: CoreToken;

@@ -78,7 +78,7 @@ Returns `requiredBalances[]` (`kind`: `source_token`, `source_native`, `fee_nati
 | `walletId` | Optional `local-signer-mcp` wallet id, copied into every step |
 | `maxSlippagePercent` | `LIFI_INTENTS` only: accepted drop from the quote before `create_lifi_intents_order` stops (default 0.5) |
 
-Returns the execution job (contract: [handoff.md](./handoff.md)): `quote`, `balanceValidation`, `destinationSetup`, `intent`, ordered `steps[]` and `tracking`. Steps:
+Returns the execution job (contract: [handoff.md](./handoff.md)): `quote`, `balanceValidation`, `destinationSetup`, `intent`, ordered `steps[]`, `tracking` and `bridgePortalDeepLink` (the same transfer in the Allbridge Core web app, for a user who signs in their own wallet). Steps:
 
 - `reset_allowance` — Ethereum USDT only, when a non-zero allowance must be reset before approving;
 - `approve` — EVM and Tron tokens without enough allowance (no approval for native currencies, NEAR Intents or Solana);

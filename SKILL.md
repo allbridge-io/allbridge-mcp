@@ -27,6 +27,10 @@ Use this MCP server to plan, build and track Allbridge Core transfers. It never 
 - **NEAR_INTENTS.** The job creates a one-time deposit and its bridge step is a plain transfer to the deposit address. Send it before `intent.deadline`. After broadcasting, you may call `submit_near_intents_deposit` with `intent.submitDepositArguments` and the real transaction hash.
 - **LIFI_INTENTS.** The bridge step has `transaction: null` and a `build` block. After any approve step confirms, call `create_lifi_intents_order` with `build.arguments` and sign the returned `step.transaction` immediately: the order is valid for 40-120 seconds (`order.secondsToSign`). On `price_changed`, show the new amount and call again with the new `minAmountToReceive` only if the user accepts. On `approval_required`, the approve step has not confirmed yet.
 
+## Without A Signer
+
+If no signer MCP is connected, or you do not sign transactions yourself, do not end with a refusal. Give the user `bridgePortalDeepLink` from `plan_bridge_transfer` or the job: it opens the same transfer (chains, tokens, amount, messenger) in the Allbridge Core web app. Tell them to connect their own wallet, check the recipient (the link does not carry it) and the fee payment method, and sign there. Once they share the transaction hash, track it with `get_transfer_status`.
+
 ## Rules
 
 - Confirm the route, amount, recipient and fees with the user before signing anything.

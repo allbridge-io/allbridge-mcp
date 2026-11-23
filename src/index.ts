@@ -6,6 +6,7 @@ import { config } from './config.js';
 import { createSdkGateway } from './core-gateway.js';
 import { AllbridgeExplorerApiClient } from './explorer-api-client.js';
 import { startStreamableHttpServer } from './http-server.js';
+import { SERVER_INSTRUCTIONS } from './server-instructions.js';
 import { createToolContext, registerAllbridgeTools } from './tools/index.js';
 
 const toolContext = createToolContext({
@@ -19,10 +20,10 @@ const toolContext = createToolContext({
 });
 
 function createServer(): McpServer {
-  const server = new McpServer({
-    name: 'allbridge-mcp',
-    version: '0.2.0',
-  });
+  const server = new McpServer(
+    { name: 'allbridge-mcp', version: '0.2.0' },
+    { instructions: SERVER_INSTRUCTIONS },
+  );
 
   registerAllbridgeTools(server, toolContext);
 

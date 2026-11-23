@@ -206,6 +206,8 @@ describe('create_bridge_execution_job', () => {
       buildTool: 'build_stellar_trustline_transaction',
     });
     expect(job.nextAction).toContain('build_stellar_trustline_transaction');
+    expect(job.nextAction).toContain('bridgePortalDeepLink');
+    expect(job.bridgePortalDeepLink).toMatch(/^https:\/\/core\.allbridge\.io\/\?f=/);
   });
 
   test('rejects a messenger that does not serve the route', async () => {

@@ -81,7 +81,7 @@ function presentRouteQuote(
       ? buildBridgePortalDeepLink({ sourceToken, destinationToken, amount, messenger: recommendedOption.messenger })
       : null,
     nextAction: recommendedOption
-      ? 'Options are sorted by the amount received. Ask for the sender and recipient addresses, confirm the messenger and fee payment method with the user, run check_sender_balances, then create_bridge_execution_job.'
+      ? 'Options are sorted by the amount received. Ask for the sender and recipient addresses, confirm the messenger and fee payment method with the user, run check_sender_balances, then create_bridge_execution_job. If the user will sign in their own wallet rather than through a signer MCP, give them bridgePortalDeepLink: it opens the recommended option in Allbridge Core.'
       : availableMessengers.length === 0
         ? 'No messenger supports this pair. Try another destination token or chain.'
         : 'No messenger can quote this amount right now (see unavailableOptions for limits).',

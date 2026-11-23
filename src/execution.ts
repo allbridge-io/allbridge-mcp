@@ -14,6 +14,7 @@ import {
   buildBridgeSummary,
   buildHistoryUrlTemplate,
   type FeePaymentMethodName,
+  NO_SIGNER_FALLBACK,
   floatToTokenAmount,
   type NormalizedAmount,
   summarizeToken,
@@ -511,5 +512,6 @@ function buildNextAction(
   }
 
   parts.push('Track the transfer with get_transfer_status and the bridge transaction hash.');
+  parts.push(NO_SIGNER_FALLBACK);
   return parts.join(' ');
 }

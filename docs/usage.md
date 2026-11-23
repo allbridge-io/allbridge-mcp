@@ -168,6 +168,10 @@ Sign and broadcast the step before the deadline, then optionally:
 
 Track with `get_transfer_status` as in example A.
 
+## Without a signer
+
+When no signer is connected, or the agent does not sign transactions itself, it gives the user `bridgePortalDeepLink` from the plan or the job. The link opens the transfer in the Allbridge Core web app with the chains, tokens, amount and messenger filled in; the user connects a wallet, checks the recipient (not part of the link) and the fee payment method, and signs there. The server instructions and every `nextAction` tell the agent to do this.
+
 ## Handling errors
 
 | Code | What to do |
