@@ -1,5 +1,5 @@
 {
-  "name": "allbridge-mcp",
+  "name": "@allbridge/allbridge-mcp",
   "version": "0.2.0",
   "description": "MCP server for Allbridge Core bridge workflows",
   "bin": {
@@ -11,6 +11,9 @@
     "README.md",
     "SKILL.md"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "engines": {
     "node": ">=22.12.0"

@@ -63,13 +63,13 @@ claude mcp add allbridge -- node /absolute/path/to/allbridge-mcp/dist/index.js
 The package ships an `allbridge-mcp` binary, so a client can start the published version without a checkout. Pin the version:
 
 ```bash
-claude mcp add allbridge -- npx -y allbridge-mcp@0.2.0
+claude mcp add allbridge -- npx -y @allbridge/allbridge-mcp@0.2.0
 ```
 
 ```json
 {
   "mcpServers": {
-    "allbridge": { "command": "npx", "args": ["-y", "allbridge-mcp@0.2.0"] }
+    "allbridge": { "command": "npx", "args": ["-y", "@allbridge/allbridge-mcp@0.2.0"] }
   }
 }
 ```
