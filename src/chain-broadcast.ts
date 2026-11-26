@@ -4,6 +4,7 @@ import { BytesReader, broadcastTransaction, deserializeTransaction } from '@stac
 import { STACKS_MAINNET, STACKS_TESTNET } from '@stacks/network';
 import { TransactionBuilder, rpc as SorobanRpc, type Transaction as StellarTransaction } from '@stellar/stellar-sdk';
 import { TronWeb } from 'tronweb';
+import { SuiGrpcClient } from '@mysten/sui/grpc';
 
 import { config } from './config.js';
 import { evmChainSymbolById, resolveRpcUrl } from './rpc-config.js';
@@ -13,6 +14,7 @@ import type {
   SignedSolanaTransaction,
   SignedSorobanTransaction,
   SignedStacksTransaction,
+  SignedSuiTransaction,
   SignedTransaction,
   SignedTronTransaction,
 } from './transaction-types.js';
@@ -147,6 +149,28 @@ async function broadcastSoroban(signedTransactionXdr: string): Promise<Broadcast
   };
 }
 
+/** Sui full nodes serve gRPC-web only (JSON-RPC was shut down), at the base URL of the node. */
+function getSuiClient(): SuiGrpcClient {
+  return new SuiGrpcClient({ network: 'mainnet', baseUrl: resolveRpcUrl('SUI').replace(/\/+$/, '') });
+}
+
+async function broadcastSui(signedTransaction: SignedSuiTransaction['signedTransaction']): Promise<BroadcastResult> {
+  const result = await getSuiClient().executeTransaction({
+    transaction: Buffer.from(signedTransaction.bytesBase64, 'base64'),
+    signatures: [signedTransaction.signature],
+  });
+  const transaction = result.Transaction ?? result.FailedTransaction;
+  if (result.$kind === 'FailedTransaction') {
+    throw new Error(`Sui transaction ${transaction.digest} failed: ${JSON.stringify(transaction.status.error)}.`);
+  }
+
+  return {
+    chainFamily: 'SUI',
+    txHash: transaction.digest,
+    receipt: { status: transaction.status, epoch: transaction.epoch },
+  };
+}
+
 export async function broadcastSignedTransactionByFamily(signedTransaction: SignedTransaction): Promise<BroadcastResult> {
   switch (signedTransaction.chainFamily) {
     case 'EVM':
@@ -159,6 +183,8 @@ export async function broadcastSignedTransactionByFamily(signedTransaction: Sign
       return broadcastStacks((signedTransaction as SignedStacksTransaction).signedTransactionHex);
     case 'SRB':
       return broadcastSoroban((signedTransaction as SignedSorobanTransaction).signedTransactionXdr);
+    case 'SUI':
+      return broadcastSui((signedTransaction as SignedSuiTransaction).signedTransaction);
     default:
       throw new Error(`Unsupported chain family ${(signedTransaction as { chainFamily: string }).chainFamily}.`);
   }

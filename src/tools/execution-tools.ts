@@ -25,7 +25,7 @@ export function registerExecutionTools(server: McpServer, context: ToolContext):
     {
       title: 'Create Bridge Execution Job',
       description:
-        'Build an ordered execution job for a transfer: the quote, an advisory balance check, destination prerequisites, and signer-ready transactions (allowance reset when needed, approve when needed, bridge). Each step transaction can be passed as is to local-signer-mcp sign_and_broadcast_transaction. NEAR_INTENTS: the job creates a one-time deposit and the bridge step transfers to it. LIFI_INTENTS: the bridge step has no transaction yet; call its build.tool (create_lifi_intents_order) right before signing. Source chains: EVM, Solana, Tron, Stacks, Stellar.',
+        'Build an ordered execution job for a transfer: the quote, an advisory balance check, destination prerequisites, and signer-ready transactions (allowance reset when needed, approve when needed, bridge). Each step transaction can be passed as is to local-signer-mcp sign_and_broadcast_transaction. NEAR_INTENTS: the job creates a one-time deposit and the bridge step transfers to it. LIFI_INTENTS: the bridge step has no transaction yet; call its build.tool (create_lifi_intents_order) right before signing. Source chains: EVM, Solana, Tron, Stacks, Stellar, Sui (NEAR_INTENTS only).',
       inputSchema: {
         ...tokenPairByAddressSchema,
         senderAddress: requiredTextSchema('Sender address on the source chain. Do not pass null.'),

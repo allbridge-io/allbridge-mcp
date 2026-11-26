@@ -2,7 +2,7 @@
   "mcpServers": {
     "allbridge": {
       "command": "npx",
-      "args": ["-y", "@allbridge/allbridge-mcp@1.0.1"],
+      "args": ["-y", "@allbridge/allbridge-mcp@1.1.0"],
       "env": {
         "ALLBRIDGE_ETH_RPC_URL": "https://your-eth-rpc.example.com"
       }

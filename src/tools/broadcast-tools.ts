@@ -37,20 +37,30 @@ const srbSignedTransactionSchema = z.object({
   signedTransactionXdr: z.string().trim().min(1),
 });
 
+const suiSignedTransactionSchema = z.object({
+  chainFamily: z.literal('SUI'),
+  walletId: z.string().trim().min(1).optional(),
+  signedTransaction: z.object({
+    bytesBase64: z.string().trim().min(1),
+    signature: z.string().trim().min(1),
+  }),
+});
+
 export const signedTransactionSchema = z.discriminatedUnion('chainFamily', [
   evmSignedTransactionSchema,
   solanaSignedTransactionSchema,
   tronSignedTransactionSchema,
   stxSignedTransactionSchema,
   srbSignedTransactionSchema,
+  suiSignedTransactionSchema,
 ]);
 
 export const signedTransactionInputSchema = {
-  chainFamily: z.enum(['EVM', 'SOLANA', 'TRX', 'STX', 'SRB']).describe('Chain family for the signed transaction.'),
+  chainFamily: z.enum(['EVM', 'SOLANA', 'TRX', 'STX', 'SRB', 'SUI']).describe('Chain family for the signed transaction.'),
   chainId: z.number().int().positive().optional().describe('Required for EVM transactions.'),
   chainSymbol: z.string().trim().min(1).optional().describe('Optional EVM chain symbol.'),
   walletId: z.string().trim().min(1).optional().describe('Optional wallet selector.'),
-  signedTransaction: z.unknown().optional().describe('Signed transaction payload for EVM or Tron.'),
+  signedTransaction: z.unknown().optional().describe('Signed transaction payload for EVM (hex string), Tron (object) or Sui ({ bytesBase64, signature }).'),
   signedTransactionHex: z.string().trim().min(1).optional().describe('Signed transaction hex payload for Solana or Stacks.'),
   signedTransactionXdr: z.string().trim().min(1).optional().describe('Signed transaction XDR payload for Stellar (SRB).'),
 };
@@ -61,7 +71,7 @@ export function registerBroadcastTools(server: McpServer, context: ToolContext):
     {
       title: 'Broadcast Signed Transaction',
       description:
-        'Broadcast an already signed transaction (EVM, Solana, Tron, Stacks or Stellar) through the configured RPC for its chain.',
+        'Broadcast an already signed transaction (EVM, Solana, Tron, Stacks, Stellar or Sui) through the configured RPC for its chain.',
       inputSchema: signedTransactionInputSchema,
     },
     async (parsed) => runTool('Broadcast signed transaction', async () => {

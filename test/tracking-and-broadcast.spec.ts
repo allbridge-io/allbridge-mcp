@@ -126,6 +126,7 @@ describe('broadcast_signed_transaction', () => {
     { chainFamily: 'TRX', signedTransaction: { signature: ['sig'] } },
     { chainFamily: 'STX', signedTransactionHex: 'abcdef' },
     { chainFamily: 'SRB', signedTransactionXdr: 'AAAA' },
+    { chainFamily: 'SUI', signedTransaction: { bytesBase64: 'AAAA', signature: 'AQID' } },
   ])('broadcasts a signed $chainFamily transaction', async (payload) => {
     setup.broadcastSignedTransactionByFamily.mockResolvedValue({ chainFamily: payload.chainFamily, txHash: 'hash', receipt: null });
 

@@ -3,7 +3,7 @@
 `allbridge-mcp` is an MCP server for Allbridge Core transfers. It lets an AI agent find a route, compare quotes, build ready-to-sign transactions, broadcast signed ones and track the result — without holding private keys.
 
 - Repository: [github.com/allbridge-io/allbridge-mcp](https://github.com/allbridge-io/allbridge-mcp)
-- npm: [`@allbridge/allbridge-mcp`](https://www.npmjs.com/package/@allbridge/allbridge-mcp) (`npx -y @allbridge/allbridge-mcp@1.0.1`)
+- npm: [`@allbridge/allbridge-mcp`](https://www.npmjs.com/package/@allbridge/allbridge-mcp) (`npx -y @allbridge/allbridge-mcp@1.1.0`)
 - End-to-end walkthrough: [`docs/usage.md`](./docs/usage.md)
 - Pairs with: [`local-signer-mcp`](https://github.com/allbridge-io/local-signer-mcp), which signs the transactions this server builds
 
@@ -27,12 +27,12 @@ The server runs on the [Allbridge Core SDK](https://www.npmjs.com/package/@allbr
 | `CCTP_V2` | bridge | Circle CCTP V2 for USDC |
 | `OFT` | bridge | LayerZero OFT (USDT0 and others) |
 | `X_RESERVE` | bridge | Circle xReserve (USDC ↔ USDCx on Stacks) |
-| `NEAR_INTENTS` | intent | NEAR Intents (1Click): transfer to a one-time deposit address, solvers deliver; any token pair except from Stacks, native currencies included |
+| `NEAR_INTENTS` | intent | NEAR Intents (1Click): transfer to a one-time deposit address, solvers deliver; any token pair except from Stacks, native currencies included; the only messenger for Sui |
 | `LIFI_INTENTS` | intent | LI.FI Intents: escrow order filled by solvers within seconds; EVM and Solana sources |
 
 **Bridge** messengers charge a deterministic Allbridge fee; the destination gas fee is paid in the native currency, in the source token (deducted from the amount) or in ABR. **Intent** messengers are market-priced: the quote already includes every fee, and an unfilled transfer is refunded to the sender.
 
-Supported source chain families: EVM, Solana, Tron, Stacks, Stellar. The live route list comes from the Core API, so `list_supported_chains` and `find_bridge_routes` always reflect it.
+Supported source chain families: EVM, Solana, Tron, Stacks, Stellar, Sui (Sui through `NEAR_INTENTS` only, in both directions). The live route list comes from the Core API, so `list_supported_chains` and `find_bridge_routes` always reflect it.
 
 ## Capability Boundary
 
@@ -63,13 +63,13 @@ claude mcp add allbridge -- node /absolute/path/to/allbridge-mcp/dist/index.js
 The package ships an `allbridge-mcp` binary, so a client can start the published version without a checkout. Pin the version:
 
 ```bash
-claude mcp add allbridge -- npx -y @allbridge/allbridge-mcp@1.0.1
+claude mcp add allbridge -- npx -y @allbridge/allbridge-mcp@1.1.0
 ```
 
 ```json
 {
   "mcpServers": {
-    "allbridge": { "command": "npx", "args": ["-y", "@allbridge/allbridge-mcp@1.0.1"] }
+    "allbridge": { "command": "npx", "args": ["-y", "@allbridge/allbridge-mcp@1.1.0"] }
   }
 }
 ```
@@ -84,7 +84,7 @@ Copy `.env.example` to `.env`, or pass variables through the MCP client `env` bl
 |----------|---------|---------|
 | `ALLBRIDGE_CORE_API_URL` | Allbridge Core API | `https://api.core.allbridge.io` |
 | `ALLBRIDGE_API_TIMEOUT_MS` | Explorer request timeout | `20000` |
-| `ALLBRIDGE_<CHAIN>_RPC_URL` | RPC of a chain, by Allbridge chain symbol (`ETH`, `ARB`, `BAS`, `SOL`, `TRX`, `STX`, `SRB`, `STLR`, …) | public endpoints |
+| `ALLBRIDGE_<CHAIN>_RPC_URL` | RPC of a chain, by Allbridge chain symbol (`ETH`, `ARB`, `BAS`, `SOL`, `TRX`, `STX`, `SRB`, `STLR`, `SUI`, …); for `SUI`, the gRPC-web base URL of a full node | public endpoints |
 | `ALLBRIDGE_SRB_NETWORK_PASSPHRASE` | Stellar network passphrase | mainnet |
 | `MCP_TRANSPORT` | `stdio` or `streamable-http` | `stdio` |
 | `MCP_AUTH_MODE` | `none`, `bearer` or `oauth` | `none` |

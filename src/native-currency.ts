@@ -6,6 +6,7 @@ const NATIVE_DECIMALS_BY_CHAIN_TYPE: Readonly<Record<string, number>> = {
   TRX: 6,
   SRB: 7,
   STX: 6,
+  SUI: 9,
 };
 
 const NATIVE_SYMBOL_BY_CHAIN: Readonly<Record<string, string>> = {
@@ -24,6 +25,7 @@ const NATIVE_SYMBOL_BY_CHAIN: Readonly<Record<string, string>> = {
   TRX: 'TRX',
   SRB: 'XLM',
   STX: 'STX',
+  SUI: 'SUI',
 };
 
 /** Decimals of the native currency of the token's chain. */

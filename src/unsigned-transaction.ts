@@ -41,19 +41,28 @@ export type UnsignedStellarTransaction = {
   serializedTransactionXdr: string;
 };
 
+/** A Sui `Transaction` serialized with `toJSON()`: the signer restores it with `Transaction.from` and builds it. */
+export type UnsignedSuiTransaction = {
+  chainFamily: 'SUI';
+  walletId?: string;
+  serializedTransaction: string;
+};
+
 export type UnsignedTransaction =
   | UnsignedEvmTransaction
   | UnsignedSolanaTransaction
   | UnsignedTronTransaction
   | UnsignedStacksTransaction
-  | UnsignedStellarTransaction;
+  | UnsignedStellarTransaction
+  | UnsignedSuiTransaction;
 
 export type TransactionFormat =
   | 'unsignedEvmTransaction'
   | 'serializedSolanaTransactionHex'
   | 'tronRawTransaction'
   | 'serializedStacksTransactionHex'
-  | 'stellarTransactionXdr';
+  | 'stellarTransactionXdr'
+  | 'suiTransactionJson';
 
 export const TRANSACTION_FORMATS: Record<UnsignedTransaction['chainFamily'], TransactionFormat> = {
   EVM: 'unsignedEvmTransaction',
@@ -61,6 +70,7 @@ export const TRANSACTION_FORMATS: Record<UnsignedTransaction['chainFamily'], Tra
   TRX: 'tronRawTransaction',
   STX: 'serializedStacksTransactionHex',
   SRB: 'stellarTransactionXdr',
+  SUI: 'suiTransactionJson',
 };
 
 type Serializable = { serialize: (config?: { requireAllSignatures?: boolean; verifySignatures?: boolean }) => Uint8Array };
@@ -139,6 +149,12 @@ export function toUnsignedTransaction(raw: RawTransaction, token: CoreToken, wal
         chainFamily: 'SRB',
         ...wallet,
         serializedTransactionXdr: requireString(raw, 'Stellar transaction XDR'),
+      };
+    case 'SUI':
+      return {
+        chainFamily: 'SUI',
+        ...wallet,
+        serializedTransaction: requireString(raw, 'Sui transaction JSON'),
       };
     default:
       throw new Error(`Chain type ${String(token.chainType)} is not supported by this server.`);

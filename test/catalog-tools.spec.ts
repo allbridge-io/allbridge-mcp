@@ -7,7 +7,8 @@ const ethUsdc = createToken({ tokenAddress: '0xeth-usdc', cctpV2Address: '0xeth-
 const arbUsdc = createToken({ tokenAddress: '0xarb-usdc', chainSymbol: 'ARB', chainName: 'Arbitrum', chainId: '0xa4b1', cctpV2Address: '0xarb-cctp' });
 const ethNative = createToken({ symbol: 'ETH', name: 'Ether', decimals: 18, tokenAddress: '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE', isNative: true });
 const arbNative = createToken({ symbol: 'ETH', name: 'Ether', decimals: 18, tokenAddress: '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE', isNative: true, chainSymbol: 'ARB', chainName: 'Arbitrum', chainId: '0xa4b1' });
-const suiUsdc = createToken({ tokenAddress: '0x5d4b::usdc::USDC', chainSymbol: 'SUI', chainName: 'Sui', chainType: 'SUI' });
+const suiUsdc = createToken({ tokenAddress: '0x5d4b::usdc::USDC', chainSymbol: 'SUI', chainName: 'Sui', chainType: 'SUI', nearIntents: { assetId: 'nep141:sui-usdc' } });
+const algUsdc = createToken({ tokenAddress: '31566704', chainSymbol: 'ALG', chainName: 'Algorand', chainType: 'ALG' });
 const baseUsdc = createToken({ tokenAddress: '0xbase-usdc', chainSymbol: 'BAS', chainName: 'Base', chainId: '0x2105' });
 
 describe('catalog tools', () => {
@@ -15,14 +16,14 @@ describe('catalog tools', () => {
 
   beforeEach(() => {
     setup = setupTools();
-    setup.gateway.getTokens.mockResolvedValue([ethUsdc, ethNative, arbUsdc, arbNative, suiUsdc, baseUsdc]);
+    setup.gateway.getTokens.mockResolvedValue([ethUsdc, ethNative, arbUsdc, arbNative, suiUsdc, algUsdc, baseUsdc]);
   });
 
   test('list_supported_chains skips chain families this server cannot sign for', async () => {
     const result = await setup.server.call('list_supported_chains', {});
     const chains = result.structuredContent.chains as Array<{ chainSymbol: string; tokenCount: number }>;
 
-    expect(chains.map((chain) => chain.chainSymbol)).toEqual(['ARB', 'BAS', 'ETH']);
+    expect(chains.map((chain) => chain.chainSymbol)).toEqual(['ARB', 'BAS', 'ETH', 'SUI']);
     expect(chains.find((chain) => chain.chainSymbol === 'ETH')?.tokenCount).toBe(2);
   });
 
@@ -53,7 +54,7 @@ describe('catalog tools', () => {
 
   test('find_bridge_routes reports unsupported chains with the supported list', async () => {
     const result = await setup.server.call('find_bridge_routes', {
-      sourceChain: 'SUI',
+      sourceChain: 'ALG',
       destinationChain: 'ETH',
       sourceTokenSymbol: 'USDC',
     });
@@ -61,7 +62,7 @@ describe('catalog tools', () => {
     expect(result.isError).toBe(true);
     expect(result.structuredContent.error).toMatchObject({
       code: 'unsupported_chain',
-      details: { field: 'sourceChain', input: 'SUI' },
+      details: { field: 'sourceChain', input: 'ALG' },
     });
   });
 
@@ -81,6 +82,16 @@ describe('catalog tools', () => {
 });
 
 describe('detectMessengers', () => {
+  test('routes Sui only through NEAR Intents, in both directions', () => {
+    const near = { nearIntents: { assetId: 'nep141:x' } };
+    const sui = createToken({ chainSymbol: 'SUI', chainType: 'SUI', cctpV2Address: '0xsui-cctp', ...near });
+    const arb = createToken({ chainSymbol: 'ARB', cctpV2Address: '0xarb-cctp', ...near });
+
+    expect(detectMessengers(sui, arb)).toEqual(['NEAR_INTENTS']);
+    expect(detectMessengers(arb, sui)).toEqual(['NEAR_INTENTS']);
+    expect(detectMessengers(createToken({ chainSymbol: 'SUI', chainType: 'SUI', cctpV2Address: '0xsui-cctp' }), arb)).toEqual([]);
+  });
+
   test('requires the same OFT id and an OFT bridge on both chains', () => {
     const source = createToken({ oftId: 'usdt0', oftBridgeAddress: '0xa' });
     const destination = createToken({ chainSymbol: 'ARB', oftId: 'usdt0', oftBridgeAddress: '0xb' });

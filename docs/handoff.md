@@ -85,6 +85,7 @@ Trimmed (`…` marks omitted values):
 | `tronRawTransaction` | `chainFamily: "TRX"`, `rawTransaction` (TronWeb transaction object) |
 | `serializedStacksTransactionHex` | `chainFamily: "STX"`, `serializedTransactionHex` |
 | `stellarTransactionXdr` | `chainFamily: "SRB"`, `serializedTransactionXdr` |
+| `suiTransactionJson` | `chainFamily: "SUI"`, `serializedTransaction` (Sui `Transaction` JSON from `toJSON()`; the signer restores it with `Transaction.from` and builds it, gas included) |
 
 When `walletId` is passed to `create_bridge_execution_job`, every transaction carries it so the signer picks that wallet.
 
