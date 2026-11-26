@@ -81,7 +81,7 @@ Returns `requiredBalances[]` (`kind`: `source_token`, `source_native`, `fee_nati
 Returns the execution job (contract: [handoff.md](./handoff.md)): `quote`, `balanceValidation`, `destinationSetup`, `intent`, ordered `steps[]`, `tracking`, `nextAction` and `bridgePortalDeepLink` (the same transfer in the Allbridge Core web app, for a user who signs in their own wallet). Steps:
 
 - `reset_allowance` — Ethereum USDT only, when a non-zero allowance must be reset before approving;
-- `approve` — EVM and Tron tokens without enough allowance (EVM only for `LIFI_INTENTS`); none for native currencies, `NEAR_INTENTS`, or Solana, Stacks and Stellar sources;
+- `approve` — EVM and Tron tokens without enough allowance (EVM only for `LIFI_INTENTS`); none for native currencies, `NEAR_INTENTS`, or Solana, Stacks, Stellar and Sui sources;
 - `bridge` — the transfer. For `LIFI_INTENTS` it has `transaction: null` and a `build` block.
 
 ### `create_lifi_intents_order`
@@ -112,6 +112,7 @@ Optional: tells NEAR Intents about the deposit so it is detected sooner.
 | `TRX` | `signedTransaction` (signed transaction object) |
 | `STX` | `signedTransactionHex` |
 | `SRB` | `signedTransactionXdr` |
+| `SUI` | `signedTransaction`: `{ bytesBase64, signature }` (built transaction bytes and the serialized signature) |
 
 Returns `txHash` and a `receipt` when the chain provides one. The payload is validated against its family before broadcasting.
 

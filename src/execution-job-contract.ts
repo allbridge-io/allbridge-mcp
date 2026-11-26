@@ -4,7 +4,7 @@
  */
 type RecordLike = Record<string, unknown>;
 
-const CHAIN_FAMILIES = new Set(['EVM', 'SOLANA', 'TRX', 'STX', 'SRB']);
+const CHAIN_FAMILIES = new Set(['EVM', 'SOLANA', 'TRX', 'STX', 'SRB', 'SUI']);
 const STEP_STATUSES = new Set(['awaiting_signature', 'blocked', 'requires_build']);
 
 export type WalletSelectorContract = {

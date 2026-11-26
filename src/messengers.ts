@@ -37,6 +37,11 @@ export function detectMessengers(sourceToken: CoreToken, destinationToken: CoreT
     return [];
   }
 
+  // Sui is served only through NEAR Intents, in both directions.
+  if (sourceToken.chainType === 'SUI' || destinationToken.chainType === 'SUI') {
+    return sourceToken.nearIntents && destinationToken.nearIntents ? ['NEAR_INTENTS'] : [];
+  }
+
   const messengers: MessengerName[] = [];
 
   if (sourceToken.cctpV2Address && destinationToken.cctpV2Address) {

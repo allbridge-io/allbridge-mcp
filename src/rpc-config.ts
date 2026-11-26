@@ -38,7 +38,7 @@ export function evmChainSymbolById(chainId: number): string | undefined {
   return EVM_CHAIN_SYMBOLS_BY_ID[chainId];
 }
 
-const SUPPORTED_NON_EVM_CHAINS = ['SOL', 'TRX', 'SRB', 'STLR', 'STX'] as const;
+const SUPPORTED_NON_EVM_CHAINS = ['SOL', 'TRX', 'SRB', 'STLR', 'STX', 'SUI'] as const;
 
 export const STELLAR_MAINNET_PASSPHRASE = 'Public Global Stellar Network ; September 2015';
 

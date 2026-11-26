@@ -68,7 +68,7 @@ describe('validateBridgeExecutionJobContract', () => {
 
   test('rejects v1 jobs, unknown chain families and unbuildable steps', () => {
     expect(() => validateBridgeExecutionJobContract(job({ version: 'v1' }))).toThrow('Expected version to be v2');
-    expect(() => validateBridgeExecutionJobContract(job({}, { transaction: { chainFamily: 'SUI' } }))).toThrow('chainFamily SUI');
+    expect(() => validateBridgeExecutionJobContract(job({}, { transaction: { chainFamily: 'ALG' } }))).toThrow('chainFamily ALG');
     expect(() => validateBridgeExecutionJobContract(job({}, { status: 'requires_build', transaction: null }))).toThrow('steps[0].build');
     expect(() => validateBridgeExecutionJobContract(job({ handoff: { ...handoff } }))).toThrow('handoff.stepId');
   });

@@ -1,4 +1,4 @@
-export type ChainFamily = 'EVM' | 'SOLANA' | 'TRX' | 'STX' | 'SRB';
+export type ChainFamily = 'EVM' | 'SOLANA' | 'TRX' | 'STX' | 'SRB' | 'SUI';
 
 export interface SignedEvmTransaction {
   chainFamily: 'EVM';
@@ -32,12 +32,22 @@ export interface SignedSorobanTransaction {
   signedTransactionXdr: string;
 }
 
+export interface SignedSuiTransaction {
+  chainFamily: 'SUI';
+  walletId?: string;
+  signedTransaction: {
+    bytesBase64: string;
+    signature: string;
+  };
+}
+
 export type SignedTransaction =
   | SignedEvmTransaction
   | SignedSolanaTransaction
   | SignedTronTransaction
   | SignedStacksTransaction
-  | SignedSorobanTransaction;
+  | SignedSorobanTransaction
+  | SignedSuiTransaction;
 
 export interface BroadcastResult {
   chainFamily: ChainFamily;

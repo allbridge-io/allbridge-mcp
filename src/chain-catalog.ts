@@ -2,6 +2,7 @@ import { isAddress as isEvmAddress } from 'ethers';
 import { PublicKey } from '@solana/web3.js';
 import { validateStacksAddress } from '@stacks/transactions';
 import { StrKey } from '@stellar/stellar-sdk';
+import { isValidSuiAddress } from '@mysten/sui/utils';
 import TronWeb from 'tronweb';
 
 import type { CoreGateway, CoreToken } from './core-gateway.js';
@@ -9,7 +10,7 @@ import { normalizeSymbol } from './utils.js';
 import { UserFacingToolError } from './tool-errors.js';
 
 /** Chain families this server can build and broadcast transactions for. */
-export const SUPPORTED_CHAIN_TYPES: ReadonlySet<string> = new Set(['EVM', 'SOLANA', 'TRX', 'STX', 'SRB']);
+export const SUPPORTED_CHAIN_TYPES: ReadonlySet<string> = new Set(['EVM', 'SOLANA', 'TRX', 'STX', 'SRB', 'SUI']);
 
 export const COMMON_CHAIN_ALIASES: Record<string, string> = {
   ETHEREUM: 'ETH',
@@ -334,6 +335,10 @@ export function validateAddressForChainType(
     case 'SRB':
       validator = 'StrKey.isValidEd25519PublicKey / StrKey.isValidContract';
       valid = StrKey.isValidEd25519PublicKey(value) || StrKey.isValidContract(value);
+      break;
+    case 'SUI':
+      validator = 'isValidSuiAddress';
+      valid = isValidSuiAddress(value);
       break;
     default:
       valid = value.length > 0;

@@ -17,7 +17,7 @@ The server reads balances and allowances, builds transactions and broadcasts sig
 |----------|---------|
 | `ALLBRIDGE_<CHAIN>_RPC_URL` | RPC of the chain with Allbridge chain symbol `<CHAIN>` |
 
-Chain symbols: `ETH`, `ARB`, `BAS`, `OPT`, `POL`, `AVA`, `BSC`, `UNI`, `CEL`, `SNC`, `LIN` (EVM), `SOL`, `TRX`, `STX`, and for Stellar both `SRB` (Soroban RPC) and `STLR` (Horizon). Use `list_supported_chains` for the live list; any symbol can be configured, including chains added later.
+Chain symbols: `ETH`, `ARB`, `BAS`, `OPT`, `POL`, `AVA`, `BSC`, `UNI`, `CEL`, `SNC`, `LIN` (EVM), `SOL`, `TRX`, `STX`, `SUI`, and for Stellar both `SRB` (Soroban RPC) and `STLR` (Horizon). Sui full nodes no longer serve JSON-RPC: `ALLBRIDGE_SUI_RPC_URL` is the gRPC-web base URL of a full node (default `https://fullnode.mainnet.sui.io`). Use `list_supported_chains` for the live list; any symbol can be configured, including chains added later.
 
 Every chain has a public default (official public endpoints for EVM chains, the Allbridge Core SDK defaults for the others). Public endpoints are rate limited — trongrid allows 3 requests per second without an API key — so production deployments should set their own RPC for every chain they serve. Empty values fall back to the defaults.
 

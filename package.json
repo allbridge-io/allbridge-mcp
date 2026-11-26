@@ -1,6 +1,6 @@
 {
   "name": "@allbridge/allbridge-mcp",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "MCP server for Allbridge Core bridge workflows",
   "repository": {
     "type": "git",
@@ -37,6 +37,7 @@
   "dependencies": {
     "@allbridge/bridge-core-sdk": "3.38.0",
     "@modelcontextprotocol/sdk": "1.32.2",
+    "@mysten/sui": "2.19.0",
     "@solana/web3.js": "1.98.4",
     "@stacks/network": "7.7.0",
     "@stacks/transactions": "7.7.0",

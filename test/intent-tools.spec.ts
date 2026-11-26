@@ -28,6 +28,9 @@ const solUsdc = createToken({
   nearIntents: { assetId: 'nep141:sol-usdc' },
   lifiIntents: { bridgeAddress: 'LifiBridgeProgram', destinations: { ARB: [ARB_USDC.toLowerCase()] } },
 });
+const SUI_USDC = '0xdba34672e30cb065b1f93e3ab55318768fd6fef66c15942c9f7cb846e2f900e7::usdc::USDC';
+const SUI_SENDER = '0x7d20dcdb2bca4f508ea9613994683eb4e76e9c4ed371169677c1be02aaf0b58e';
+const suiUsdc = createToken({ tokenAddress: SUI_USDC, chainSymbol: 'SUI', chainName: 'Sui', chainType: 'SUI', nearIntents: { assetId: 'nep141:sui-usdc' } });
 const stxUsdcx = createToken({ symbol: 'USDCx', tokenAddress: 'SP120SBRBQJ00MCWS7TM5R8WJNTTKD5K0HFRC2CNE.usdcx', chainSymbol: 'STX', chainType: 'STX', nearIntents: { assetId: 'x' } });
 
 const nearDeposit = {
@@ -74,7 +77,7 @@ describe('intent quotes and jobs', () => {
 
   beforeEach(() => {
     setup = setupTools();
-    setup.gateway.getTokens.mockResolvedValue([arbUsdc, basUsdc, solUsdc, stxUsdcx]);
+    setup.gateway.getTokens.mockResolvedValue([arbUsdc, basUsdc, solUsdc, stxUsdcx, suiUsdc]);
     setup.gateway.getTokenBalance.mockResolvedValue('500');
     setup.gateway.getNativeTokenBalance.mockResolvedValue({ int: '1000000000000000000', float: '1' });
     setup.gateway.getNearIntentsQuote.mockResolvedValue({ amountIn: '100', amountOut: '99.9', minAmountOut: '98.9', timeEstimate: 22, estimated: true });
@@ -158,6 +161,43 @@ describe('intent quotes and jobs', () => {
     });
     expect(job.balanceValidation.requiredBalances).toEqual([expect.objectContaining({ kind: 'source_token', requiredBaseUnits: '20000000' })]);
     expect(job.nextAction).toContain('submit_near_intents_deposit');
+  });
+
+  test('a NEAR Intents job from Sui hands the serialized Sui transaction to the signer', async () => {
+    const suiTransaction = JSON.stringify({ version: 2, sender: SUI_SENDER, commands: [] });
+    setup.gateway.buildSendTransaction.mockResolvedValue(suiTransaction);
+
+    const result = await setup.server.call('create_bridge_execution_job', {
+      sourceTokenAddress: SUI_USDC,
+      destinationTokenAddress: ARB_USDC,
+      senderAddress: SUI_SENDER,
+      recipientAddress: EVM_RECIPIENT,
+      amount: '20',
+      messenger: 'NEAR_INTENTS',
+    });
+    const job = result.structuredContent as Record<string, any>;
+
+    expect(() => validateBridgeExecutionJobContract(job)).not.toThrow();
+    expect(setup.gateway.checkAllowance).not.toHaveBeenCalled();
+    expect(job.steps).toEqual([expect.objectContaining({
+      id: 'bridge',
+      transactionFormat: 'suiTransactionJson',
+      transaction: { chainFamily: 'SUI', serializedTransaction: suiTransaction },
+    })]);
+    expect(job.steps[0].handoff.walletSelector).toMatchObject({ chainFamily: 'SUI', chainSymbol: 'SUI', senderAddress: SUI_SENDER });
+  });
+
+  test('rejects an invalid Sui sender address', async () => {
+    const result = await setup.server.call('create_bridge_execution_job', {
+      sourceTokenAddress: SUI_USDC,
+      destinationTokenAddress: ARB_USDC,
+      senderAddress: '0xnot-a-sui-address',
+      recipientAddress: EVM_RECIPIENT,
+      amount: '20',
+      messenger: 'NEAR_INTENTS',
+    });
+
+    expect(result.structuredContent.error).toMatchObject({ code: 'invalid_address', details: { field: 'senderAddress', validator: 'isValidSuiAddress' } });
   });
 
   test('a LI.FI Intents job approves now and defers the order to create_lifi_intents_order', async () => {
